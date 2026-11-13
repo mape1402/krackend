@@ -1,4 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Microsoft.Extensions.Logging;
 using Mule;
 using Mule.Dispatching;
@@ -10,15 +12,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IMuleClient _muleClient;
         private readonly IRuntimeAdmissionController _admissionController;
         private readonly ILogger<IntakeBufferMule> _logger;
+        private readonly IOrchestrationInstanceCoordinator _coordinator;
 
         public IntakeBufferMule(
             IMuleClient muleClient,
             IRuntimeAdmissionController admissionController,
-            ILogger<IntakeBufferMule> logger)
+            ILogger<IntakeBufferMule> logger,
+            IOrchestrationInstanceCoordinator coordinator)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
             _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         }
 
         public async Task EnqueueWorkAsync(WorkItem workItem, CancellationToken cancellationToken = default)
@@ -51,17 +56,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     break;
 
                 case Ingress.IngressKind.Backchannel:
-                    await EnqueueDurableAsync(
-                        MuleActionKeys.BackchannelActionKey,
-                        workItem,
-                        options =>
+                    async Task AcceptResponseAsync(CancellationToken token) => await EnqueueDurableAsync(
+                        MuleActionKeys.BackchannelActionKey, workItem, options =>
                         {
                             options.Lane = MuleActionKeys.BackchannelLane;
                             options.CorrelationId = workItem.MessageMetadata?.OrchestrationInstanceId
                                 ?? workItem.MessageMetadata?.CorrelationId;
                             options.DeduplicationKey = BuildBackchannelDeduplicationKey(workItem);
-                        },
-                        cancellationToken);
+                        }, token);
+                    if (System.Ulid.TryParse(workItem.MessageMetadata?.OrchestrationInstanceId, out var parsed))
+                    {
+                        var instanceId = new Id(parsed);
+                        // Serialize the acceptance of the response with the timeout decision.
+                        // Failure to acquire must propagate so the transport can redeliver.
+                        var accepted = await _coordinator.TryExecuteAsync(instanceId, AcceptResponseAsync, cancellationToken);
+                        if (!accepted) throw new OrchestrationInstanceLeaseUnavailableException(instanceId);
+                    }
+                    else await AcceptResponseAsync(cancellationToken);
                     break;
 
                 default:

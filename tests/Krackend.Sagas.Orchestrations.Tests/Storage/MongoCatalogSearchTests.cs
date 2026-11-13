@@ -20,6 +20,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
@@ -39,6 +40,63 @@ public sealed class MongoCatalogSearchTests
     // Keep Testcontainers deterministic: newer MongoDB 8.0 images deliberately
     // refuse the hosted Linux kernels used by GitHub Actions (SERVER-121912).
     private const string MongoImage = "mongo:8.0.4";
+
+    [Fact]
+    public async Task RuntimeRecoveryPagesAndSchemaProbeWorkWithMongoProvider()
+    {
+        await using var mongo = new ContainerBuilder().WithImage(MongoImage).WithPortBinding(27017, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(27017)).Build();
+        await mongo.StartAsync();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddOrchestratorRuntimeStorageEntityFramework(options =>
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "runtime_recovery_test"),
+            storage => storage.ConfigureModel = model => model.UseKrackendMongoRuntimeModel());
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        context.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
+        await context.Database.EnsureCreatedAsync();
+        var repo = scope.ServiceProvider.GetRequiredService<ITaskExecutionRepository>();
+        var now = DateTime.UtcNow;
+        var instanceId = Id.New();
+        var stageId = Id.New();
+        for (var index = 0; index < 3; index++)
+            await repo.Create(new TaskExecution
+            {
+                Id = Id.New(), OrchestrationInstanceId = instanceId, StageExecutionId = stageId,
+                TaskKey = $"task-{index}", Status = TaskExecutionStatus.WaitingResponse,
+                WaitingSinceUtc = now.AddMinutes(-5), ResponseDeadlineUtc = now.AddMinutes(index - 4)
+            });
+        var pages = Assert.IsAssignableFrom<IResponseTimeoutRepairPageReader>(repo);
+        var first = await pages.GetResponseTimeoutsDuePage(now, 0, 2);
+        var second = await pages.GetResponseTimeoutsDuePage(now, 2, 2);
+        Assert.Equal(2, first.Count);
+        Assert.Equal("task-2", Assert.Single(second).TaskKey);
+        var action = new Mule.DurableAction
+        {
+            Key = Mule.ActionKey.From("BackchannelSaga"), Lane = "runtime-backchannel", Payload = "{}", PayloadType = "test",
+            Status = Mule.DurableActionStatus.Locked, CreatedOnUtc = new DateTimeOffset(now.AddSeconds(-1))
+        };
+        context.Set<Mule.DurableAction>().Add(action);
+        await context.SaveChangesAsync();
+        var actionReader = scope.ServiceProvider.GetRequiredService<IOrchestrationDurableActionStateReader>();
+        Assert.Equal(DurableWorkPresence.Present, await actionReader.ReadPendingBeforeAsync(action.Id.ToString(), now));
+        // Legacy Mongo documents may predate the optional scope projection fields.
+        var legacyEvents = new MongoClient($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}")
+            .GetDatabase("runtime_recovery_test").GetCollection<BsonDocument>("SagaFailureEvents");
+        await legacyEvents.InsertOneAsync(new BsonDocument
+        {
+            { "_id", new BsonBinaryData(Id.New().Value.ToByteArray()) },
+            { "OrchestrationInstanceId", new BsonBinaryData(instanceId.Value.ToByteArray()) },
+            { "OccurredOnUtc", now }, { "TransitionType", "TaskFailed" }
+        });
+        var probe = scope.ServiceProvider.GetServices<IRuntimeDependencyProbe>()
+            .Single(item => item.GetType().Name == "EntityFrameworkRuntimePrimaryPersistenceProbe");
+        var result = await probe.CheckAsync();
+        Assert.True(result.IsAvailable, result.Reason);
+    }
 
     [Fact]
     public async Task ArchivedBackchannelActivationCommitsOrRollsBackTogetherInMongoReplicaSet()

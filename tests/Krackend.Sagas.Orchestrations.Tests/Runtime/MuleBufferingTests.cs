@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,24 @@ public sealed class MuleBufferingTests
     private const string TriggerLane = "runtime-trigger";
     private const string BackchannelLane = "runtime-backchannel";
     private const string DispatchLane = "runtime-dispatch";
+
+    [Fact]
+    public async Task BackchannelIsNotAcknowledgedWhenTheInstanceLeaseIsBusy()
+    {
+        var mule = Substitute.For<IMuleClient>();
+        var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
+        coordinator.TryExecuteAsync(Arg.Any<Id>(), Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
+            .Returns(false);
+        using var provider = BuildServiceProvider(mule, coordinator: coordinator);
+        var intake = provider.GetRequiredService<IIntakeBuffer>();
+        var work = new WorkItem
+        {
+            ArtifactId = "artifact", IngressKind = IngressKind.Backchannel,
+            MessageMetadata = new OrchestrationMessageMetadata { OrchestrationInstanceId = Id.New().ToString() }
+        };
+        await Assert.ThrowsAsync<OrchestrationInstanceLeaseUnavailableException>(() => intake.EnqueueWorkAsync(work));
+        await mule.DidNotReceiveWithAnyArgs().EnqueueAsync(default, default(WorkItem)!);
+    }
 
     [Fact]
     public async Task IntakeBufferMule_WhenWorkItemIsTrigger_EnqueuesTriggerActionWithCorrelation()
@@ -729,7 +748,8 @@ public sealed class MuleBufferingTests
         IMuleSerializer? muleSerializer = null,
         IMuleCommitNotifier? commitNotifier = null,
         ITaskDispatchRepository? dispatchRepository = null,
-        IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecovery = null)
+        IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecovery = null,
+        IOrchestrationInstanceCoordinator? coordinator = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -750,6 +770,7 @@ public sealed class MuleBufferingTests
         {
             services.AddSingleton(cancellationRecovery);
         }
+        if (coordinator is not null) services.AddSingleton(coordinator);
         return services.BuildServiceProvider();
     }
 

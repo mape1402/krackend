@@ -5,14 +5,17 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 
-internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeoutProcessor, IOrchestrationTimeoutBatchProcessor
+internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeoutProcessor, IOrchestrationTimeoutBatchProcessor, IOrchestrationTimeoutContinuationProcessor
 {
     private const string DefaultTimeoutErrorCode = "TaskTimedOut";
     private const string TimeoutObservedOnUtcMetadataKey = "TimeoutObservedOnUtc";
@@ -29,6 +32,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IRuntimeAdmissionController _admissionController;
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
+    private readonly IOrchestrationDurableWorkInspector _workInspector;
+    private readonly OrchestrationTimeoutRepairCursor _repairCursor;
+    private readonly ILogger<DefaultOrchestrationTimeoutProcessor> _logger;
 
     public DefaultOrchestrationTimeoutProcessor(
         IOrchestrationInstanceRepository instanceRepository,
@@ -41,7 +47,10 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         ISagaEngine sagaEngine,
         IOrchestrationInstanceCoordinator coordinator,
         IRuntimeAdmissionController admissionController,
-        IRuntimeStorageUnitOfWork unitOfWork)
+        IRuntimeStorageUnitOfWork unitOfWork,
+        IOrchestrationDurableWorkInspector workInspector = null,
+        OrchestrationTimeoutRepairCursor repairCursor = null,
+        ILogger<DefaultOrchestrationTimeoutProcessor> logger = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -54,26 +63,93 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _workInspector = workInspector;
+        _repairCursor = repairCursor ?? new OrchestrationTimeoutRepairCursor();
+        _logger = logger ?? NullLogger<DefaultOrchestrationTimeoutProcessor>.Instance;
     }
 
     public async Task<int> ProcessDueTimeoutsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
     {
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
 
-        var waitingTasks = await _taskRepository.GetResponseTimeoutsDue(utcNow, take: 100, cancellationToken);
-        var processed = 0;
-        var batch = new OrchestrationTimeoutBatchContext();
-
-        foreach (var waitingTask in waitingTasks)
+        await _repairCursor.Gate.WaitAsync(cancellationToken);
+        try
         {
-            var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, batch, cancellationToken);
-            if (result.Applied)
+            const int take = 100;
+            var pageReader = _taskRepository as IResponseTimeoutRepairPageReader;
+            if (pageReader is null && !_repairCursor.WarnedMissingPaging)
             {
-                processed++;
+                _logger.LogWarning("The configured task repository does not support paged timeout repair; inconsistent records can block later candidates.");
+                _repairCursor.WarnedMissingPaging = true;
             }
+            var waitingTasks = pageReader is null
+                ? await _taskRepository.GetResponseTimeoutsDue(utcNow, take, cancellationToken)
+                : await pageReader.GetResponseTimeoutsDuePage(utcNow, _repairCursor.DueOffset, take, cancellationToken);
+            var processed = 0;
+            var unresolved = 0;
+            var batch = new OrchestrationTimeoutBatchContext();
+            foreach (var waitingTask in waitingTasks)
+            {
+                try
+                {
+                    var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, batch, cancellationToken);
+                    if (result.Applied) processed++;
+                    else unresolved++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception exception)
+                {
+                    unresolved++;
+                    _logger.LogWarning(exception, "Could not process overdue response timeout for task '{TaskId}'.", waitingTask.Id);
+                }
+            }
+            if (pageReader is not null)
+                _repairCursor.DueOffset = waitingTasks.Count < take || unresolved > int.MaxValue - _repairCursor.DueOffset
+                    ? 0 : _repairCursor.DueOffset + unresolved;
+            return processed;
         }
+        finally { _repairCursor.Gate.Release(); }
+    }
 
-        return processed;
+    public async Task ResumeTimedOutAsync(Id instanceId, Id taskId, Id attemptId, Id dispatchId, int attemptNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var acquired = await _coordinator.TryExecuteAsync(instanceId, async token =>
+        {
+            OrchestrationInstance instance;
+            TaskExecution task;
+            TaskExecutionAttempt attempt;
+            try
+            {
+                instance = await _instanceRepository.GetById(instanceId, token);
+                task = await _taskRepository.GetById(taskId, token);
+                attempt = await _attemptRepository.GetById(attemptId, token);
+            }
+            catch (KeyNotFoundException) { return; }
+            var dispatch = await _dispatchRepository.TryGetById(dispatchId, token);
+            if (instance.Status != OrchestrationInstanceStatus.Running || task.OrchestrationInstanceId != instanceId ||
+                task.Status != TaskExecutionStatus.TimedOut || task.LastAttemptNumber != attemptNumber ||
+                attempt.TaskExecutionId != taskId || attempt.AttemptNumber != attemptNumber ||
+                attempt.Status != TaskExecutionStatus.TimedOut || attempt.DispatchId != dispatchId ||
+                dispatch is null || dispatch.TaskExecutionAttemptId != attemptId ||
+                !string.Equals(dispatch.DispatchStatus, "TimedOut", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // The timeout transition already committed. Resume from persisted state without
+            // applying the timeout again or accepting a timer for an older attempt.
+            await _sagaEngine.OrchestrateAsync(new ForwardIntent
+            {
+                ArtifactId = instance.RuntimeOrchestrationArtifactId.ToString(),
+                IngressTransport = IngressTransport.Messaging,
+                MessageMetadata = new OrchestrationMessageMetadata
+                {
+                    SagaId = GetSagaId(instance), OrchestrationInstanceId = instance.Id.ToString(),
+                    CorrelationId = instance.CorrelationId, CurrentStage = instance.CurrentStageKey
+                },
+                Payload = instance.SnapshotPayload?.DeepClone()
+            }, token);
+        }, cancellationToken);
+        if (!acquired) throw new OrchestrationInstanceLeaseUnavailableException(instanceId);
     }
 
     public async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
@@ -132,6 +208,10 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         CancellationToken cancellationToken)
     {
         var task = await _taskRepository.GetById(waitingTask.Id, cancellationToken);
+        if (task.Status == TaskExecutionStatus.TimedOut)
+        {
+            return new TaskResponseTimeoutProcessingResult(false) { ResumeRequired = true };
+        }
         if (task.Status != TaskExecutionStatus.WaitingResponse ||
             (task.WaitingSinceUtc is null && task.ResponseDeadlineUtc is null))
         {
@@ -181,6 +261,14 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
         {
             return TaskResponseTimeoutProcessingResult.Ignored;
+        }
+
+        if (_workInspector is not null && await _workInspector.InspectPendingResponseAsync(
+                dispatch, attempt, dueOnUtc, cancellationToken) == DurableWorkPresence.Present)
+        {
+            // The broker delivery was already accepted on time. Keep the timeout recoverable
+            // while the durable callback finishes instead of declaring a false timeout.
+            return new TaskResponseTimeoutProcessingResult(false, RetryRequired: true) { WaitingForResponseProcessing = true };
         }
 
         var waitGraceResult = await TryApplyWaitGraceAsync(instance, task, timeoutPolicy, utcNow, cancellationToken);

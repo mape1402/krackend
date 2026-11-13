@@ -18,6 +18,11 @@ public interface IOrchestrationDurableWorkInspector
 
     /// <summary>Checks the durable action associated with a compensation delivery.</summary>
     Task<DurableWorkPresence> InspectCompensationAsync(CompensationExecution compensation, CancellationToken cancellationToken = default);
+
+    /// <summary>Checks whether this attempt has an unprocessed response accepted before its deadline.</summary>
+    Task<DurableWorkPresence> InspectPendingResponseAsync(TaskDispatch dispatch, TaskExecutionAttempt attempt,
+        DateTime deadlineUtc, CancellationToken cancellationToken = default)
+        => Task.FromResult(DurableWorkPresence.Unknown);
 }
 
 /// <summary>Presence does not imply that the provider action is still executable.</summary>
@@ -28,6 +33,10 @@ public interface IOrchestrationDurableActionStateReader
 {
     /// <summary>Returns Unknown for actions absent from or unsupported by the durable store.</summary>
     Task<DurableWorkPresence> ReadAsync(string actionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Checks whether an action was accepted before the deadline and remains pending or locked.</summary>
+    Task<DurableWorkPresence> ReadPendingBeforeAsync(string actionId, DateTime deadlineUtc,
+        CancellationToken cancellationToken = default) => Task.FromResult(DurableWorkPresence.Unknown);
 }
 
 internal sealed class UnknownOrchestrationDurableActionStateReader : IOrchestrationDurableActionStateReader

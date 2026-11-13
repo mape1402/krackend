@@ -36,6 +36,14 @@ public interface IOrchestrationTimeoutBatchProcessor
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>Resumes a timeout whose state was committed before its continuation ran.</summary>
+public interface IOrchestrationTimeoutContinuationProcessor
+{
+    /// <summary>Re-evaluates only the matching current timed-out attempt and dispatch.</summary>
+    Task ResumeTimedOutAsync(Id instanceId, Id taskId, Id attemptId, Id dispatchId, int attemptNumber,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>Result of processing a single response timeout action.</summary>
 public sealed record TaskResponseTimeoutProcessingResult(
     bool Applied,
@@ -44,4 +52,10 @@ public sealed record TaskResponseTimeoutProcessingResult(
 {
     /// <summary>Gets a result for a stale or already-resolved timeout action.</summary>
     public static TaskResponseTimeoutProcessingResult Ignored { get; } = new(false);
+
+    /// <summary>Gets whether a matching committed timeout may need its continuation resumed.</summary>
+    public bool ResumeRequired { get; init; }
+
+    /// <summary>Gets whether an on-time accepted response is still awaiting processing.</summary>
+    public bool WaitingForResponseProcessing { get; init; }
 }

@@ -97,6 +97,7 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<ICompensationExecutionRepository, CompensationExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressConfigurationRepository, RuntimeIngressConfigurationRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeExtensionPackageRepository, RuntimeExtensionPackageRepository>());
+        services.TryAddSingleton<RuntimeSchemaProbeCache>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IRuntimeDependencyProbe, EntityFrameworkRuntimePrimaryPersistenceProbe>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactProjectionScheduler, EntityFrameworkRuntimeArtifactProjectionScheduler>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressStandupScheduler, EntityFrameworkRuntimeIngressStandupScheduler>());

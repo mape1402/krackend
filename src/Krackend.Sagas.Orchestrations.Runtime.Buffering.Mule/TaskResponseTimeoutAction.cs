@@ -25,7 +25,20 @@ public sealed class TaskResponseTimeoutAction(
         // deadline would deduplicate against the action currently being executed.
         if (result.RetryRequired)
         {
+            if (result.WaitingForResponseProcessing)
+                throw new InvalidOperationException($"Timeout for instance '{request.OrchestrationInstanceId}', task '{request.TaskExecutionId}', attempt {request.AttemptNumber}, dispatch '{request.DispatchId}' is deferred while its on-time response is processed.");
             throw new InvalidOperationException("Task response timeout is still pending; retry processing after instance contention or an early wake-up.");
+        }
+
+        if (result.ResumeRequired && processor is IOrchestrationTimeoutContinuationProcessor continuation)
+        {
+            await continuation.ResumeTimedOutAsync(
+                new Id(System.Ulid.Parse(request.OrchestrationInstanceId)),
+                new Id(System.Ulid.Parse(request.TaskExecutionId)),
+                new Id(System.Ulid.Parse(request.TaskExecutionAttemptId)),
+                new Id(System.Ulid.Parse(request.DispatchId)),
+                request.AttemptNumber,
+                cancellationToken);
         }
 
         if (result.RescheduleOnUtc is not { } rescheduleOnUtc)

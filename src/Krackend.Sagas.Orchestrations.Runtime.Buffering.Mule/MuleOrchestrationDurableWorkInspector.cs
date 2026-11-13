@@ -8,6 +8,27 @@ using global::Mule;
 
 internal sealed class MuleOrchestrationDurableWorkInspector(IMuleStorage storage, IOrchestrationDurableActionStateReader reader) : IOrchestrationDurableWorkInspector
 {
+    public async Task<DurableWorkPresence> InspectPendingResponseAsync(TaskDispatch dispatch, TaskExecutionAttempt attempt,
+        DateTime deadlineUtc, CancellationToken cancellationToken = default)
+    {
+        // A callback without an explicit attempt is also accepted by the engine for the current dispatch.
+        var result = DurableWorkPresence.Missing;
+        foreach (var number in attempt.AttemptNumber == 0 ? new[] { 0 } : new[] { attempt.AttemptNumber, 0 })
+        {
+            var id = await storage.FindByDeduplicationKeyAsync(MuleActionKeys.BackchannelActionKey,
+                $"backchannel:{dispatch.Id}:{number}", cancellationToken);
+            if (id is null) continue;
+            var state = await reader.ReadPendingBeforeAsync(id.Value.ToString(), deadlineUtc, cancellationToken);
+            // Fast-lane work can be visible in the buffer before its durable-store flush.
+            if (state == DurableWorkPresence.Present ||
+                (state == DurableWorkPresence.Unknown && System.Ulid.TryParse(id.Value.ToString(), out var parsed) &&
+                 parsed.Time.UtcDateTime <= DateTime.SpecifyKind(deadlineUtc, DateTimeKind.Utc)))
+                return DurableWorkPresence.Present;
+            result = state;
+        }
+        return result;
+    }
+
     public async Task<DurableWorkPresence> InspectDispatchAsync(TaskDispatch dispatch, CancellationToken cancellationToken = default)
     {
         var id = await storage.FindByDeduplicationKeyAsync(MuleActionKeys.RemoteCommandDispatchActionKey, dispatch.Id.ToString(), cancellationToken);

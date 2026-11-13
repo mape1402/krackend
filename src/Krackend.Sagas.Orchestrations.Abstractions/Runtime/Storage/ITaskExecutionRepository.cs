@@ -54,3 +54,15 @@ public interface ITaskExecutionRepository
         CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyCollection<TaskExecution>>(Array.Empty<TaskExecution>());
 }
+
+/// <summary>Optional bounded paging for timeout repair, so inconsistent rows cannot block later work.</summary>
+public interface IResponseTimeoutRepairPageReader
+{
+    /// <summary>Reads a page of overdue response waits in stable deadline order.</summary>
+    Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDuePage(
+        DateTime dueBeforeUtc, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads a page of response waits without a captured timer.</summary>
+    Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
+        int skip, int take, CancellationToken cancellationToken = default);
+}

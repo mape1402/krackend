@@ -3,8 +3,11 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,6 +20,40 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class TaskResponseTimeoutSchedulingTests
 {
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public async Task TimeoutContinuationOnlyResumesTheCurrentAttempt(int latestAttempt, bool shouldResume)
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(), Status = OrchestrationInstanceStatus.Running,
+            OrchestrationDefinitionKey = "test", CorrelationId = "test", SagaId = "test", ExecutionKey = "test"
+        };
+        var task = new TaskExecution { Id = Id.New(), OrchestrationInstanceId = instance.Id, TaskKey = "task", Status = TaskExecutionStatus.TimedOut, LastAttemptNumber = latestAttempt };
+        var attempt = new TaskExecutionAttempt { Id = Id.New(), TaskExecutionId = task.Id, AttemptNumber = 1, Status = TaskExecutionStatus.TimedOut };
+        var dispatch = new TaskDispatch { Id = Id.New(), TaskExecutionAttemptId = attempt.Id, DispatchType = "Messaging", DispatchStatus = "TimedOut" };
+        attempt.DispatchId = dispatch.Id;
+        var instances = Substitute.For<IOrchestrationInstanceRepository>();
+        var tasks = Substitute.For<ITaskExecutionRepository>();
+        var attempts = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatches = Substitute.For<ITaskDispatchRepository>();
+        var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
+        var engine = Substitute.For<ISagaEngine>();
+        instances.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        tasks.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attempts.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatches.TryGetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        coordinator.TryExecuteAsync(instance.Id, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
+            .Returns(call => ExecuteUnderLeaseAsync(call.ArgAt<Func<CancellationToken, Task>>(1)));
+        var processor = new DefaultOrchestrationTimeoutProcessor(instances, Substitute.For<IStageExecutionRepository>(), tasks,
+            attempts, dispatches, Substitute.For<IExecutionTransitionRepository>(), Substitute.For<IRuntimeArtifactResolver>(),
+            engine, coordinator, Substitute.For<IRuntimeAdmissionController>(), Substitute.For<IRuntimeStorageUnitOfWork>());
+
+        await processor.ResumeTimedOutAsync(instance.Id, task.Id, attempt.Id, dispatch.Id, 1);
+        await engine.Received(shouldResume ? 1 : 0).OrchestrateAsync(Arg.Any<ForwardIntent>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ScheduleAsyncPersistsTimeoutInTheDedicatedLaneAndCapturesItsReference()
     {
@@ -543,6 +580,31 @@ public sealed class TaskResponseTimeoutSchedulingTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, CancellationToken.None));
         await scheduler.DidNotReceive().ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeoutActionReportsWhenAnAcceptedResponseIsStillPending()
+    {
+        var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        var taskId = Id.New();
+        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(false, RetryRequired: true)
+                { WaitingForResponseProcessing = true }));
+        var action = new TaskResponseTimeoutAction(processor, scheduler);
+        var context = new MuleActionContext<TaskResponseTimeoutActionRequest>(
+            new DurableAction { Key = ActionKey.From("TaskResponseTimeout"), Lane = "runtime-timeout", Status = DurableActionStatus.Pending },
+            new ServiceCollection().BuildServiceProvider(),
+            new TaskResponseTimeoutActionRequest
+            {
+                OrchestrationInstanceId = Id.New().ToString(), TaskExecutionId = taskId.ToString(),
+                TaskExecutionAttemptId = Id.New().ToString(), DispatchId = Id.New().ToString(),
+                AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
+            });
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, CancellationToken.None));
+        Assert.Contains("on-time response", error.Message);
+        Assert.Contains(taskId.ToString(), error.Message);
     }
 
     private static TimeoutSchedulerFixture CreateFixture(IOrchestrationTimeoutProcessor? timeoutProcessor = null)

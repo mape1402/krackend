@@ -556,8 +556,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             if (IsCallbackResolved(task, attempt, dispatch))
             {
-                return IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata)
-                    ? BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId)
+                if (IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata))
+                    return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+
+                // A durable callback may be replayed after its state transaction committed but
+                // before the engine advanced. Only resume the exact already-committed result.
+                var committedSuccess = task.Status == TaskExecutionStatus.Completed &&
+                    attempt.Status == TaskExecutionStatus.Completed &&
+                    string.Equals(dispatch.DispatchStatus, "Acknowledged", StringComparison.OrdinalIgnoreCase);
+                var committedFailure = task.Status == TaskExecutionStatus.Failed &&
+                    attempt.Status == TaskExecutionStatus.Failed &&
+                    string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase);
+                return instance.Status == OrchestrationInstanceStatus.Running && (committedSuccess || committedFailure)
+                    ? BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId) with { ResumeOnly = true }
                     : null;
             }
 

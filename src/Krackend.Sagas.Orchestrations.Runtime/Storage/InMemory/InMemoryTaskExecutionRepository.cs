@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryTaskExecutionRepository : ITaskExecutionRepository
+    internal sealed class InMemoryTaskExecutionRepository : ITaskExecutionRepository, IResponseTimeoutRepairPageReader
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -49,5 +49,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<TaskExecution>>(_store.Tasks.Values
                 .Where(x => x.Status == TaskExecutionStatus.WaitingResponse && x.WaitingSinceUtc <= dueBeforeUtc)
                 .ToArray());
+
+        public Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDuePage(DateTime dueBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var candidates = _store.Tasks.Values.Where(x => x.Status == TaskExecutionStatus.WaitingResponse).ToArray();
+            var projected = candidates.Where(x => x.ResponseDeadlineUtc <= dueBeforeUtc)
+                .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id);
+            var legacy = candidates.Where(x => x.ResponseDeadlineUtc is null && x.WaitingSinceUtc <= dueBeforeUtc)
+                .OrderBy(x => x.WaitingSinceUtc).ThenBy(x => x.Id);
+            return Task.FromResult<IReadOnlyCollection<TaskExecution>>(projected.Concat(legacy)
+                .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArray());
+        }
+
+        public Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(int skip, int take, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyCollection<TaskExecution>>(_store.Tasks.Values
+                .Where(x => x.Status == TaskExecutionStatus.WaitingResponse && x.ResponseDeadlineUtc != null &&
+                    string.IsNullOrWhiteSpace(x.TimeoutActionId))
+                .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
+                .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArray());
+        }
     }
 }
