@@ -14,6 +14,10 @@ Krackend runtime libraries, hosts, and samples target .NET 10. Applications cons
 
 ## Version 6.4 highlights
 
+`v6.4.2` strengthens recovery when a Runtime process stops while handling an orchestration response or timeout. Durable callbacks and timeout actions can resume already-persisted results, and an accepted on-time response is protected while it is still pending. Timeout repair progresses past inconsistent records, and missing failure-event projection fields close Runtime admission with a diagnostic instead of silently accepting work that cannot be persisted.
+
+The shared Web UI updates Zoorce to 1.4.0 and uses its Verdant palette as the green base. Hosts can continue to customize both light and dark colors; no preset selector is added to the top bar. The recovery changes add no database fields. Hosts remain responsible for existing Runtime migrations, a durable redelivering transport, and instance coordination. See [response and timeout recovery](docs/krackend-sagas-api-configuration.md#response-and-timeout-recovery).
+
 `v6.4.0` refreshes the orchestration Runtime dashboard, Statistics, Instances, History, and instance detail views with AG Grid, Apache ECharts, row inspectors, formatted payloads, and trace information. Control Plane and Runtime catalogs share configurable theming and improved navigation. Roadmap creation and paste actions use Zoorce speed dials, and a new draft opens directly.
 
 Failure causes are stored as a Runtime projection. New failure events are projected as they occur, and historical events and their orchestration scopes are reconstructed gradually by the statistics job. Hosts must migrate the new failure-event and backfill-checkpoint storage and indexes; the SQL Server sample includes migrations. Statistics can be incomplete until backfill finishes. The release also repairs recovery of unfinished parallel tasks and caches artifacts during timeout repair passes.
