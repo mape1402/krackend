@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.4.2] - 2026-11-14
+
+### Changed
+
+- Update Zoorce to 1.4.0 and use the Verdant preset as the shared green theme base, while preserving host-configured light and dark palettes.
+
+### Fixed
+
+- Resume persisted callback and timeout results when durable work is replayed after a Runtime restart, without applying the same result twice or advancing an outdated attempt.
+- Protect responses accepted before their deadline from competing timeouts while callback processing recovers, and allow timeout repair to progress past inconsistent records.
+- Reject intake when no buffer is configured and close Runtime admission with a diagnostic when required failure-event projection fields are unavailable.
+
+### Upgrade notes
+
+- No new database fields or migrations are required by this release. Hosts must already have applied the failure-event projection migrations introduced in v6.4.0.
+- Response ordering and redelivery require instance coordination, synchronized UTC clocks, a durable transport configured for redelivery, and `OnHandlerSuccess`. Custom storage implementations should provide the paged timeout-repair and durable-action state capabilities described in the [Sagas configuration reference](docs/krackend-sagas-api-configuration.md#response-and-timeout-recovery).
+
+------
+
 ## [v6.4.1] - 2026-11-12
 
 ### Fixed

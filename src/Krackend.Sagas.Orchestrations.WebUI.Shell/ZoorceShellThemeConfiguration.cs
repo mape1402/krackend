@@ -20,7 +20,7 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         var theme = _theme.Value;
         options.ApplicationName = theme.Title;
         options.BrandMark = string.IsNullOrWhiteSpace(theme.BrandMark) ? "K" : theme.BrandMark.Trim();
-        options.UseThemePreset(ZoorceThemePreset.Neutral);
+        options.UseThemePreset(ZoorceThemePreset.Verdant);
         options.DefaultTheme = theme.Mode == OrchestratorWebUIThemeMode.Dark
             ? ZoorceThemeMode.Dark : ZoorceThemeMode.Light;
         var defaults = new OrchestratorWebUIThemeOptions();

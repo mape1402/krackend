@@ -13,6 +13,8 @@ public sealed class ZoorceShellThemeConfigurationTests
     {
         var actual = new ZoorceShellOptions();
         new ZoorceShellThemeConfiguration(Options.Create(new OrchestratorWebUIThemeOptions())).Configure(actual);
+        Assert.Equal(ZoorceThemePreset.Verdant, actual.Themes.ActivePreset);
+        Assert.Null(actual.ThemeSelector);
         Assert.Equal("#087a57", actual.Light.Primary);
         Assert.Equal("#eef5f1", actual.Light.Sidebar);
         Assert.Equal("#d9f2e7", actual.Light.PrimarySoft);
@@ -48,6 +50,7 @@ public sealed class ZoorceShellThemeConfigurationTests
         using var provider = services.BuildServiceProvider();
 
         var theme = provider.GetRequiredService<IOptions<ZoorceShellOptions>>().Value;
+        Assert.Null(theme.ThemeSelector);
         Assert.Equal("My orchestration", theme.ApplicationName);
         Assert.Equal("K", theme.BrandMark);
         Assert.Equal(expected, theme.DefaultTheme);
