@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -7,18 +8,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 
 internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationInstanceCoordinator
 {
-    private static readonly AsyncLocal<HashSet<Id>> HeldInstances = new();
+    private static readonly AsyncLocal<Dictionary<Id, DefaultOrchestrationInstanceCoordinator>> HeldInstances = new();
 
     private readonly IOrchestrationInstanceRepository _instanceRepository;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly OrchestrationCoordinationOptions _options;
     private readonly ILogger<DefaultOrchestrationInstanceCoordinator> _logger;
 
     public DefaultOrchestrationInstanceCoordinator(
         IOrchestrationInstanceRepository instanceRepository,
+        IServiceScopeFactory scopeFactory,
         IOptions<OrchestrationCoordinationOptions> options,
         ILogger<DefaultOrchestrationInstanceCoordinator> logger)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _options = options?.Value ?? new OrchestrationCoordinationOptions();
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -127,7 +131,9 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             {
                 await Task.Delay(renewalInterval, linkedCancellation.Token);
                 var now = DateTime.UtcNow;
-                var renewed = await _instanceRepository.TryAcquireLease(
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var renewalRepository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+                var renewed = await renewalRepository.TryAcquireLease(
                     instanceId,
                     leaseId,
                     now,
@@ -161,13 +167,16 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         }
     }
 
-    private static bool IsHeld(Id instanceId)
-        => HeldInstances.Value?.Contains(instanceId) == true;
+    private bool IsHeld(Id instanceId)
+        => HeldInstances.Value?.TryGetValue(instanceId, out var owner) == true && ReferenceEquals(owner, this);
 
-    private static void Push(Id instanceId)
+    private void Push(Id instanceId)
     {
-        HeldInstances.Value ??= new HashSet<Id>();
-        HeldInstances.Value.Add(instanceId);
+        var held = HeldInstances.Value is { } current
+            ? new Dictionary<Id, DefaultOrchestrationInstanceCoordinator>(current)
+            : new Dictionary<Id, DefaultOrchestrationInstanceCoordinator>();
+        held[instanceId] = this;
+        HeldInstances.Value = held;
     }
 
     private static void Pop(Id instanceId)
@@ -178,11 +187,9 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             return;
         }
 
-        held.Remove(instanceId);
-        if (held.Count == 0)
-        {
-            HeldInstances.Value = null;
-        }
+        var updated = new Dictionary<Id, DefaultOrchestrationInstanceCoordinator>(held);
+        updated.Remove(instanceId);
+        HeldInstances.Value = updated.Count == 0 ? null : updated;
     }
 
     private static TimeSpan ResolveLeaseDuration(OrchestrationCoordinationOptions options)

@@ -265,7 +265,7 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
-    public async Task RuntimeReconciliationBackgroundServiceRunsRecoveryBeforeReopening()
+    public async Task RuntimeReconciliationBackgroundServiceRunsWithoutBlockingHealthyIntake()
     {
         var reconciled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stateController = Substitute.For<IRuntimeOperationalStateController>();
@@ -309,10 +309,49 @@ public sealed class RuntimeDisasterRecoveryTests
         await reconciled.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await service.StopAsync(CancellationToken.None);
 
-        await stateController.Received().MarkRecoveringAsync(
-            "Automated runtime reconciliation is running.",
-            Arg.Any<CancellationToken>());
+        await stateController.DidNotReceive().MarkRecoveringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await reconciler.Received().ReconcileAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HealthyRuntimeAcceptsTriggersAndResponsesDuringReconciliation()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reconciler = Substitute.For<IOrchestrationRuntimeReconciler>();
+        reconciler.ReconcileAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                entered.TrySetResult();
+                await release.Task.WaitAsync(call.Arg<CancellationToken>());
+                return new RuntimeReconciliationResult(0, 0, 0, false);
+            });
+        var artifacts = Substitute.For<IRuntimeArtifactRepository>();
+        artifacts.GetReady(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(Array.Empty<RuntimeOrchestrationArtifact>()));
+        var services = new ServiceCollection();
+        services.AddScoped(_ => reconciler);
+        services.AddScoped(_ => artifacts);
+        services.AddScoped(_ => Substitute.For<IRuntimeIngressStandupScheduler>());
+        await using var provider = services.BuildServiceProvider();
+        var controller = new DefaultRuntimeOperationalStateController(provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<DefaultRuntimeOperationalStateController>.Instance);
+        var admission = new DefaultRuntimeAdmissionController(controller);
+        var service = new RuntimeReconciliationBackgroundService(provider.GetRequiredService<IServiceScopeFactory>(), controller,
+            new StaticOptionsMonitor<RuntimeReconciliationOptions>(new RuntimeReconciliationOptions { ScanIntervalSeconds = 60 }),
+            NullLogger<RuntimeReconciliationBackgroundService>.Instance);
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(admission.CanAccept(RuntimeAdmissionOperation.TriggerIntake));
+            Assert.True(admission.CanAccept(RuntimeAdmissionOperation.BackchannelIntake));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await service.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]

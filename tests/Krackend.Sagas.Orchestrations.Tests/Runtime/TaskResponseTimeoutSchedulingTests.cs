@@ -20,6 +20,19 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class TaskResponseTimeoutSchedulingTests
 {
+    [Fact]
+    public async Task TimeoutNotificationDoesNotInheritExecutionContext()
+    {
+        using var fixture = CreateFixture();
+        var marker = new AsyncLocal<string?> { Value = "saga-context" };
+        var observed = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Notifier.NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { observed.TrySetResult(marker.Value); return ValueTask.CompletedTask; });
+        fixture.Scheduler.GetType().GetMethod("NotifyWhenDue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(fixture.Scheduler, [MuleUlid.NewUlid(), "runtime-timeout", DateTimeOffset.UtcNow]);
+        Assert.Null(await observed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
     [Theory]
     [InlineData(1, true)]
     [InlineData(2, false)]

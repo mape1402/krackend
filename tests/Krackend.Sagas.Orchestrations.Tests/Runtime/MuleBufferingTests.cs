@@ -716,6 +716,22 @@ public sealed class MuleBufferingTests
     }
 
     [Fact]
+    public async Task ScheduledDispatchNotificationDoesNotInheritExecutionContext()
+    {
+        var marker = new AsyncLocal<string?> { Value = "saga-context" };
+        var observed = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var notifier = Substitute.For<IMuleCommitNotifier>();
+        notifier.NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { observed.TrySetResult(marker.Value); return ValueTask.CompletedTask; });
+        using var provider = BuildServiceProvider(Substitute.For<IMuleClient>(), Substitute.For<IMuleStorage>(),
+            Substitute.For<IMuleSerializer>(), notifier);
+        var dispatcher = provider.GetRequiredService<IRemoteCommandDispatcher>();
+        dispatcher.GetType().GetMethod("ScheduleDueNotification", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(dispatcher, [MuleUlid.NewUlid(), MuleSettings.DefaultLane, DateTimeOffset.UtcNow]);
+        Assert.Null(await observed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
     public async Task MuleRemoteCommandDispatcher_WhenScheduledRenotifyFails_SwallowsFailure()
     {
         var commitNotifier = Substitute.For<IMuleCommitNotifier>();

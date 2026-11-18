@@ -298,20 +298,27 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         // Immediate dispatch deliberately does not poll Mule's durable table for future actions. Keep one lightweight
         // local wake-up for this durable timer; process restart remains safe because Mule's scheduled recovery reads
         // the persisted next due action on startup. This is a per-timeout timer, never a scan over waiting sagas.
-        _ = Task.Run(async () =>
+        var scopeFactory = _scopeFactory;
+        var logger = _logger;
+        void Schedule() => _ = Task.Run(async () =>
         {
             try
             {
                 if (delay > TimeSpan.Zero) await Task.Delay(delay);
-                using var scope = _scopeFactory.CreateScope();
+                using var scope = scopeFactory.CreateScope();
                 await scope.ServiceProvider.GetRequiredService<IMuleCommitNotifier>()
                     .NotifySavedAsync(actionId, lane, CancellationToken.None);
             }
             catch (Exception exception)
             {
-                _logger.LogWarning(exception, "Could not notify Mule about due response timeout '{ActionId}'.", actionId);
+                logger.LogWarning(exception, "Could not notify Mule about due response timeout '{ActionId}'.", actionId);
             }
         });
+        if (ExecutionContext.IsFlowSuppressed()) Schedule();
+        else
+        {
+            using (ExecutionContext.SuppressFlow()) Schedule();
+        }
     }
 
     private static string BuildDeduplicationKey(TaskResponseTimeoutScheduleRequest request)

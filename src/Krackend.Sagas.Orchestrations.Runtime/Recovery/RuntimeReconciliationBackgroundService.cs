@@ -56,7 +56,6 @@ internal sealed class RuntimeReconciliationBackgroundService : BackgroundService
                 return;
             }
 
-            await _stateController.MarkRecoveringAsync("Automated runtime reconciliation is running.", cancellationToken);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var reconciler = scope.ServiceProvider.GetRequiredService<IOrchestrationRuntimeReconciler>();
             await reconciler.ReconcileAsync(DateTime.UtcNow, cancellationToken);
