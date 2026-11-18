@@ -13,6 +13,33 @@ using System.Reflection;
 public sealed class InMemoryRuntimeRepositoryBehaviorTests
 {
     [Fact]
+    public async Task IndependentScopeCannotInheritAnotherScopesLease()
+    {
+        using var provider = CreateProvider();
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+        var repository = firstScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var first = firstScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
+        var instance = Instance(OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        var ran = false;
+
+        Assert.True(await first.TryExecuteAsync(instance.Id, async _ =>
+        {
+            var acquired = await Task.Run(() => second.TryExecuteAsync(instance.Id, token =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            }, waitForLease: false));
+            Assert.False(acquired);
+        }));
+
+        Assert.False(ran);
+        Assert.True(await second.TryExecuteAsync(instance.Id, _ => Task.CompletedTask, waitForLease: false));
+    }
+
+    [Fact]
     public async Task OrchestrationInstanceCoordinatorSkipsOperationWhenAnotherRuntimeNodeOwnsLease()
     {
         using var provider = CreateProvider(options =>

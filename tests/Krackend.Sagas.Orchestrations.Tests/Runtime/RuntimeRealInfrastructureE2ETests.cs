@@ -1182,6 +1182,90 @@ public sealed class RuntimeRealInfrastructureE2ETests
     }
 
     [Fact(Timeout = 240_000)]
+    public async Task TenConcurrentInstancesAdvanceThroughThreeParallelStages()
+    {
+        const int instanceCount = 10;
+        const int stageCount = 3;
+        var suffix = NewSuffix();
+        var version = new SemanticVersion(2, 15, 0);
+        var triggerTopic = Topic(suffix, "events.concurrent.parallel");
+        var topics = Enumerable.Range(0, stageCount * 2).Select(i => Topic(suffix, $"commands.parallel.{i}")).ToArray();
+        var correlations = Enumerable.Range(0, instanceCount).Select(i => $"parallel-load-{suffix}-{i}").ToArray();
+        await using var downstream = await RealMessagingServiceHost.StartAsync(_infrastructure, Endpoints(version, topics));
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        foreach (var topic in topics)
+            for (var i = 0; i < instanceCount; i++) downstream.Scenario.Enqueue(topic, RealMessagingServiceOutcome.NoReply());
+
+        var stages = Enumerable.Range(0, stageCount).Select(index =>
+        {
+            var group = Id.New();
+            return StageWithGraph($"stage-{index}", index + 1,
+                [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask(topics[index * 2], 1, version, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(180), "Timeout"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask(topics[index * 2 + 1], 2, version, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(180), "Timeout"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group));
+        }).ToArray();
+        var artifact = Artifact(Topic(suffix, "concurrent.parallel"), version, $"parallel-load-{suffix}", [EventTrigger(triggerTopic, version)], stages);
+        await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await Task.WhenAll(correlations.Select(correlation => runtime.PublishTriggerAsync(triggerTopic, version.ToString(), BusinessPayload(("correlation", correlation)), correlation)));
+
+        for (var stage = 0; stage < stageCount; stage++)
+        {
+            var stageTopics = topics.Skip(stage * 2).Take(2).ToHashSet(StringComparer.Ordinal);
+            var invocations = await PollingAssert.EventuallyAsync(
+                () => Task.FromResult(downstream.Scenario.Invocations.Where(item => stageTopics.Contains(item.Topic)).ToArray()),
+                items => items.Length == instanceCount * 2 && items.Select(item => item.MessageMetadata.OrchestrationInstanceId).Distinct().Count() == instanceCount,
+                $"Stage {stage} did not dispatch both commands for all concurrent instances", TimeSpan.FromSeconds(120));
+            var statuses = await runtime.QueryAsync(db => db.OrchestrationInstances.AsNoTracking().Where(instance => correlations.Contains(instance.CorrelationId)).ToArrayAsync());
+            Assert.Equal(instanceCount, statuses.Length);
+            Assert.All(statuses, instance => Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status));
+            Console.WriteLine($"Stage {stage}: {invocations.Length} commands from {instanceCount} active instances after {elapsed.Elapsed}.");
+            await Task.WhenAll(invocations.Select(item => runtime.PublishBackchannelAsync(item.MessageMetadata.ReplyAddress!, item.MessageMetadata,
+                new OrchestrationExecutionResultMetadata { Succeeded = true, Status = "Completed", CompletedOnUtc = DateTime.UtcNow }, BusinessPayload(("ok", true)))));
+        }
+
+        await PollingAssert.EventuallyAsync(
+            () => runtime.QueryAsync(db => db.OrchestrationInstances.AsNoTracking().CountAsync(instance => correlations.Contains(instance.CorrelationId) && instance.Status == OrchestrationInstanceStatus.Completed)),
+            count => count == instanceCount, "Not all concurrent instances completed", TimeSpan.FromSeconds(120));
+        Console.WriteLine($"Completed {instanceCount} instances, {stageCount} stages and {instanceCount * stageCount * 2} tasks in {elapsed.Elapsed}.");
+    }
+
+    [Fact(Timeout = 360_000)]
+    public async Task RuntimeProcessesIncreasingConcurrentTriggerBursts()
+    {
+        var suffix = NewSuffix();
+        var version = new SemanticVersion(2, 14, 1);
+        var triggerTopic = Topic(suffix, "events.load.requested");
+        var taskTopic = Topic(suffix, "commands.load.process");
+        var artifact = Artifact(Topic(suffix, "load"), version, $"load-{suffix}",
+            [EventTrigger(triggerTopic, version)], Stage("process", 1, MessagingTask("load.process", 1, version, topic: taskTopic)));
+        await using var downstream = await RealMessagingServiceHost.StartAsync(_infrastructure, Endpoints(version, taskTopic));
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
+
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var total = 0;
+        foreach (var size in new[] { 10, 20, 40, 40 })
+        {
+            var start = total;
+            var correlations = Enumerable.Range(start, size).Select(index => $"load-{suffix}-{index}").ToArray();
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            var cpuStart = process.TotalProcessorTime;
+            await Task.WhenAll(correlations.Select(correlation => runtime.PublishTriggerAsync(
+                triggerTopic, version.ToString(), BusinessPayload(("load", correlation)), correlation)));
+            await PollingAssert.EventuallyAsync(
+                () => runtime.QueryAsync(db => db.OrchestrationInstances.AsNoTracking().CountAsync(instance =>
+                    correlations.Contains(instance.CorrelationId) && instance.Status == OrchestrationInstanceStatus.Completed)),
+                completed => completed == size, $"Only part of the {size}-instance load burst completed", TimeSpan.FromSeconds(120));
+            elapsed.Stop();
+            process.Refresh();
+            total += size;
+            Console.WriteLine($"Load burst: {size} completed in {elapsed.Elapsed}; process CPU {process.TotalProcessorTime - cpuStart}; working set {process.WorkingSet64 / 1024 / 1024} MiB.");
+        }
+        await WaitForInvocationCountAsync(downstream.Scenario, taskTopic, total);
+    }
+
+    [Fact(Timeout = 240_000)]
     public async Task RuntimeProcessesManyConcurrentTriggerInstancesThroughRealMessaging()
     {
         var suffix = NewSuffix();

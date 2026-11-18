@@ -5,6 +5,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 /// <summary>
 /// Coordinates exclusive mutation access to one orchestration instance across runtime nodes.
 /// </summary>
+/// <remarks>
+/// A coordinator is scoped to one unit of work. Nested calls in that scope may reuse its lease;
+/// independent concurrent work must use a separate dependency-injection scope.
+/// </remarks>
 public interface IOrchestrationInstanceCoordinator
 {
     /// <summary>

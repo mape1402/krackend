@@ -12,6 +12,12 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.5 highlights
+
+`v6.5.0` isolates instance-lease renewal from the saga's EF context, prevents independently scoped work from inheriting another scope's lease, and allows healthy trigger and backchannel intake during periodic reconciliation. Scheduled Mule notifications no longer retain the originating saga's execution context. Mule dependencies are updated to 2.3.2.
+
+No database migration is added; hosts continue to choose and configure their EF providers. Mule 2.3.2 does not include the separate fix for a Redis FastLane terminal action whose durable record is missing.
+
 ## Version 6.4 highlights
 
 `v6.4.2` strengthens recovery when a Runtime process stops while handling an orchestration response or timeout. Durable callbacks and timeout actions can resume already-persisted results, and an accepted on-time response is protected while it is still pending. Timeout repair progresses past inconsistent records, and missing failure-event projection fields close Runtime admission with a diagnostic instead of silently accepting work that cannot be persisted.

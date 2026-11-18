@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.5.0] - 2026-11-18
+
+### Changed
+
+- Update Mule durable actions, Entity Framework Core, Redis FastLane, and test in-memory packages to 2.3.2.
+
+### Fixed
+
+- Renew orchestration instance leases in a separate dependency-injection scope so lease renewal cannot concurrently use the saga's EF context. Lease ownership is scoped to the coordinator, allowing nested work while independently scoped work must acquire its own lease.
+- Keep periodic reconciliation from rejecting healthy trigger and backchannel intake while recovery work runs. Scheduled Mule notifications no longer retain the originating saga's execution context or scoped services.
+
+### Upgrade notes
+
+- This release adds no database fields or migrations. Hosts continue to configure their own EF provider and storage.
+- Mule 2.3.2 does not quarantine a Redis FastLane terminal action whose durable record is missing; that separate fix is not included in this release.
+
+------
+
 ## [v6.4.2] - 2026-11-14
 
 ### Changed

@@ -211,7 +211,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             // Immediate dispatch does not continuously poll future durable work. The persisted action is still
             // recovered after a restart; this local wake-up only re-notifies Mule at the exact due instant.
-            _ = Task.Run(async () =>
+            var scopeFactory = _scopeFactory;
+            var logger = _logger;
+            void Schedule() => _ = Task.Run(async () =>
             {
                 if (delay > TimeSpan.Zero)
                 {
@@ -220,18 +222,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
                 try
                 {
-                    using var scope = _scopeFactory.CreateScope();
+                    using var scope = scopeFactory.CreateScope();
                     var commitNotifier = scope.ServiceProvider.GetRequiredService<IMuleCommitNotifier>();
                     await commitNotifier.NotifySavedAsync(actionId, lane, CancellationToken.None);
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogWarning(
+                    logger.LogWarning(
                         exception,
                         "Mule scheduled remote command dispatch action '{ActionId}' could not be re-notified when it became due.",
                         actionId);
                 }
             });
+            if (ExecutionContext.IsFlowSuppressed()) Schedule();
+            else
+            {
+                using (ExecutionContext.SuppressFlow()) Schedule();
+            }
         }
 
         internal static string BuildDeduplicationKey(RemoteCommand command)
