@@ -276,6 +276,42 @@ $batchReports = @($cases | Group-Object block | Sort-Object { [int]$_.Name } | F
 
 $latencies = @($cases | Where-Object status -eq 'Completed' | ForEach-Object { [double]$_.endToEndMs })
 $runtimeLatencies = @($cases | Where-Object status -eq 'Completed' | ForEach-Object { [double]$_.runtimeDurationMs })
+$trendWindowSeconds = 10 * 60
+$trendWindows = @($cases | Group-Object {
+    $dispatch = $dispatches[[int]$_.block - 1]
+    [int][math]::Floor([double]$dispatch.scheduledOffsetSeconds / $trendWindowSeconds)
+} | Sort-Object { [int]$_.Name } | ForEach-Object {
+    $windowIndex = [int]$_.Name
+    $windowCases = @($_.Group)
+    $windowLatencies = @($windowCases | Where-Object status -eq 'Completed' | ForEach-Object { [double]$_.endToEndMs })
+    [pscustomobject][ordered]@{
+        window = $windowIndex + 1
+        fromSecond = $windowIndex * $trendWindowSeconds
+        toSecond = [math]::Min($durationSeconds, ($windowIndex + 1) * $trendWindowSeconds)
+        instances = $windowCases.Count
+        slaBreaches = @($windowCases | Where-Object slaBreached).Count
+        latency = Get-DemoPercentiles $windowLatencies
+    }
+})
+$trendCount = 0.0
+$trendSumX = 0.0
+$trendSumY = 0.0
+$trendSumXX = 0.0
+$trendSumXY = 0.0
+foreach ($case in $cases | Where-Object status -eq 'Completed') {
+    $x = [double]$dispatches[[int]$case.block - 1].scheduledOffsetSeconds / 60.0
+    $y = [double]$case.endToEndMs
+    $trendCount++
+    $trendSumX += $x
+    $trendSumY += $y
+    $trendSumXX += $x * $x
+    $trendSumXY += $x * $y
+}
+$trendDenominator = $trendCount * $trendSumXX - $trendSumX * $trendSumX
+$trendSlopeMsPerMinute = if ($trendDenominator -eq 0) { 0.0 } else {
+    ($trendCount * $trendSumXY - $trendSumX * $trendSumY) / $trendDenominator
+}
+$lastCompletionOffsetSeconds = ($cases.completionOffsetSeconds | Measure-Object -Maximum).Maximum
 $completed = @($cases | Where-Object status -eq 'Completed').Count
 $failed = @($cases | Where-Object { $_.status -notin @('Completed','Pending') }).Count
 $pending = @($cases | Where-Object status -eq 'Pending').Count
@@ -304,6 +340,13 @@ $report = [ordered]@{
     elapsedSeconds = $clock.Elapsed.TotalSeconds
     latency = Get-DemoPercentiles $latencies
     runtimeLatency = Get-DemoPercentiles $runtimeLatencies
+    trend = [ordered]@{
+        windowMinutes = 10
+        slopeMsPerMinute = $trendSlopeMsPerMinute
+        windows = $trendWindows
+    }
+    lastOrchestrationClosedOffsetSeconds = $lastCompletionOffsetSeconds
+    lastOrchestrationClosedOnUtc = if ($null -eq $lastCompletionOffsetSeconds) { $null } else { $testStartedOnUtc.AddSeconds($lastCompletionOffsetSeconds) }
     dispatches = $dispatches.ToArray()
     blocks = $batchReports
     cases = $cases
