@@ -53,6 +53,18 @@ public sealed class TaskDispatch
     /// </summary>
     public DateTime? SentOnUtc { get; set; }
 
+    /// <summary>Identifies the first durably accepted callback; also fences concurrent timeout writes.</summary>
+    public string CallbackReceiptId { get; set; }
+
+    /// <summary>Gets or sets when the first callback was accepted.</summary>
+    public DateTime? CallbackAcceptedOnUtc { get; set; }
+
+    /// <summary>Gets or sets the recoverable serialized callback while processing is pending.</summary>
+    public string PendingCallbackPayload { get; set; }
+
+    /// <summary>Gets or sets whether the accepted callback still needs processing.</summary>
+    public bool CallbackPending { get; set; }
+
     /// <summary>
     /// Gets or sets scheduled on utc.
     /// </summary>
@@ -97,4 +109,13 @@ public sealed class TaskDispatch
     /// Gets or sets metadata.
     /// </summary>
     public Dictionary<string, JsonNode> Metadata { get; set; } = new();
+
+    /// <summary>Creates an independent storage snapshot.</summary>
+    public TaskDispatch CreateSnapshot()
+    {
+        var snapshot = (TaskDispatch)MemberwiseClone();
+        snapshot.RequestPayload = RequestPayload?.DeepClone();
+        snapshot.Metadata = Metadata.ToDictionary(pair => pair.Key, pair => pair.Value?.DeepClone());
+        return snapshot;
+    }
 }

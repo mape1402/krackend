@@ -57,6 +57,10 @@ public sealed class RedisRuntimeReactiveFanout : BackgroundService, IRuntimeReac
     }
 
     /// <inheritdoc />
+    public Task PublishResyncAsync(CancellationToken cancellationToken = default)
+        => PublishMessage(new Message(_origin, "resync", null), cancellationToken);
+
+    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Enabled) return;

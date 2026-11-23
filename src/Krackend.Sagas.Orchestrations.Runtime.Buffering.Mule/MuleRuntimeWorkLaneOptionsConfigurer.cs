@@ -14,13 +14,24 @@ internal sealed class MuleRuntimeWorkLaneOptionsConfigurer(IOptions<KrackendOrch
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        // Runtime-owned work is activated directly after its durable save. Scheduled
+        // recovery scans once at startup, wakes for due retries/timeouts, and is signaled
+        // when an immediate activation is omitted. It preserves crash recovery without
+        // continuously querying SQL while the realtime path is healthy.
+        settings.ImmediateDispatch = true;
+        settings.RecoveryMode = MuleRecoveryMode.Scheduled;
+
         var configured = runtimeOptions.Value;
+        settings.DispatchInterval = ResolveInterval(configured.RecoveryPollingInterval, TimeSpan.FromSeconds(30));
         var defaults = KrackendMuleRuntimeCapacityProfile.Resolve(configured);
-        EnsureLane(settings, MuleActionKeys.TriggerLane, 200, 8, defaults.Trigger, configured.Trigger);
-        EnsureLane(settings, MuleActionKeys.BackchannelLane, 400, 20, defaults.Backchannel, configured.Backchannel);
-        EnsureLane(settings, MuleActionKeys.DispatchLane, 300, 14, defaults.Dispatch, configured.Dispatch);
-        EnsureLane(settings, MuleActionKeys.TimeoutLane, 350, 16, defaults.Timeout, configured.Timeout);
-        EnsureLane(settings, MuleActionKeys.StatisticsLane, 10, 1, defaults.Statistics, configured.Statistics);
+        EnsureLane(settings, MuleActionKeys.TriggerLane, 200, 8, defaults.Trigger, configured.Trigger, settings.DispatchInterval);
+        // Callback recovery is latency-sensitive: a lost immediate wakeup must not
+        // suspend a real-time saga until the sparse global disaster scan. Healthy
+        // callbacks still run by direct activation; this interval is fallback only.
+        EnsureLane(settings, MuleActionKeys.BackchannelLane, 400, 20, defaults.Backchannel, configured.Backchannel, TimeSpan.FromSeconds(1));
+        EnsureLane(settings, MuleActionKeys.DispatchLane, 300, 14, defaults.Dispatch, configured.Dispatch, settings.DispatchInterval);
+        EnsureLane(settings, MuleActionKeys.TimeoutLane, 350, 16, defaults.Timeout, configured.Timeout, TimeSpan.FromSeconds(1));
+        EnsureLane(settings, MuleActionKeys.StatisticsLane, 10, 1, defaults.Statistics, configured.Statistics, settings.DispatchInterval);
     }
 
     private static void EnsureLane(
@@ -29,7 +40,8 @@ internal sealed class MuleRuntimeWorkLaneOptionsConfigurer(IOptions<KrackendOrch
         int priority,
         int weight,
         ResolvedMuleLaneOptions defaults,
-        KrackendOrchestrationsMuleLaneOptions overrides)
+        KrackendOrchestrationsMuleLaneOptions overrides,
+        TimeSpan recoveryPollingInterval)
     {
         if (settings.Lanes.ContainsKey(lane)) return;
 
@@ -39,6 +51,7 @@ internal sealed class MuleRuntimeWorkLaneOptionsConfigurer(IOptions<KrackendOrch
             Weight = weight,
             WorkerCount = ResolvePositive(overrides.WorkerCount, defaults.WorkerCount),
             MaxDegreeOfParallelism = ResolvePositive(overrides.MaxDegreeOfParallelism, defaults.MaxDegreeOfParallelism),
+            PollingInterval = ResolveInterval(overrides.RecoveryPollingInterval, recoveryPollingInterval),
             DispatchBatchSize = ResolvePositive(overrides.DispatchBatchSize, defaults.DispatchBatchSize),
             DispatchQueueCapacity = ResolveNonNegative(overrides.DispatchQueueCapacity, defaults.DispatchQueueCapacity),
             ExecutionQueueCapacity = ResolveNonNegative(overrides.ExecutionQueueCapacity, defaults.ExecutionQueueCapacity),
@@ -51,6 +64,9 @@ internal sealed class MuleRuntimeWorkLaneOptionsConfigurer(IOptions<KrackendOrch
     private static int ResolvePositive(int? value, int fallback) => Math.Max(1, value ?? fallback);
 
     private static int ResolveNonNegative(int? value, int fallback) => Math.Max(0, value ?? fallback);
+
+    private static TimeSpan ResolveInterval(TimeSpan? value, TimeSpan fallback)
+        => value is { } interval && interval > TimeSpan.Zero ? interval : fallback;
 }
 
 internal static class KrackendMuleRuntimeCapacityProfile
@@ -64,11 +80,21 @@ internal static class KrackendMuleRuntimeCapacityProfile
         {
             KrackendMuleRuntimeProfile.Development => new CapacityBudget(7, Math.Clamp(processors * 2, 16, 48), 128),
             KrackendMuleRuntimeProfile.HighThroughput => new CapacityBudget(
-                Math.Clamp(processors, 8, 24), Math.Clamp(processors * 8, 128, 512), 1_024),
+                // Claim workers are asynchronous admission loops, not dedicated threads.
+                // A tiny fixed pool makes ImmediateDispatch form a burst into waves before
+                // the much larger executor can see the work. Scheduled recovery keeps
+                // these readers asleep when there is no activation, so size admission for
+                // realtime bursts instead of throttling it to the processor count.
+                Math.Clamp(processors * 8, 128, 1_024),
+                // Mule executors are asynchronous tasks, not dedicated threads. A
+                // real-time profile must not force hundreds of independent sagas
+                // through a few dozen artificial slots.
+                Math.Clamp(processors * 128, 2_048, 8_192),
+                4_096),
             KrackendMuleRuntimeProfile.Custom => new CapacityBudget(
                 Math.Max(7, options.TotalWorkerCount ?? 7), Math.Max(13, options.TotalMaxDegreeOfParallelism ?? 32), 256),
             _ => new CapacityBudget(
-                Math.Clamp(processors / 2, 7, 12), Math.Clamp(processors * 4, 32, 192), 512)
+                Math.Clamp(processors, 7, 24), Math.Clamp(processors * 4, 32, 192), 512)
         };
 
         budget = budget with
@@ -79,9 +105,12 @@ internal static class KrackendMuleRuntimeCapacityProfile
             Parallelism = Math.Max(13, options.TotalMaxDegreeOfParallelism ?? budget.Parallelism)
         };
 
-        var coreWorkers = Allocate(budget.Workers - 3, 18, 34, 30, 18);
+        // Healthy callbacks use the direct dispatcher; Mule's backchannel lane is
+        // recovery capacity. Give the hot trigger and network-dispatch paths the
+        // majority of claim and execution slots.
+        var coreWorkers = Allocate(budget.Workers - 3, 25, 15, 50, 10);
         // Reserve one execution slot for statistics and four for each of the two artifact lifecycle lanes.
-        var coreParallelism = Allocate(budget.Parallelism - 9, 18, 34, 30, 18);
+        var coreParallelism = Allocate(budget.Parallelism - 9, 25, 15, 50, 10);
 
         return new ResolvedMuleRuntimeCapacity(
             CreateLane(budget, coreWorkers[0], coreParallelism[0]),

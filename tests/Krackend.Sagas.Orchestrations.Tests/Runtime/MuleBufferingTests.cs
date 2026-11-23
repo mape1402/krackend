@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
@@ -39,6 +40,53 @@ public sealed class MuleBufferingTests
         };
         await Assert.ThrowsAsync<OrchestrationInstanceLeaseUnavailableException>(() => intake.EnqueueWorkAsync(work));
         await mule.DidNotReceiveWithAnyArgs().EnqueueAsync(default, default(WorkItem)!);
+    }
+
+    [Fact]
+    public async Task EmbeddedBackchannelContentionIsPersistedForImmediateRecovery()
+    {
+        var mule = Substitute.For<IMuleClient>();
+        mule.EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<WorkItem>(),
+                Arg.Any<Action<EnqueueOptions>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
+        var repository = Substitute.For<
+            ITaskDispatchRepository,
+            ITaskDispatchCallbackReceiptRepository,
+            IEmbeddedTaskTransportStateRepository>();
+        ((IEmbeddedTaskTransportStateRepository)repository).EmbedsCurrentTransportState.Returns(true);
+        var instanceId = Id.New();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        sagaEngine.OrchestrateAsync(Arg.Any<ForwardIntent>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new OrchestrationInstanceLeaseUnavailableException(instanceId)));
+        using var provider = BuildServiceProvider(
+            mule,
+            dispatchRepository: repository,
+            sagaEngine: sagaEngine);
+        var work = new WorkItem
+        {
+            ArtifactId = Id.New().ToString(),
+            IngressKind = IngressKind.Backchannel,
+            MessageMetadata = new OrchestrationMessageMetadata
+            {
+                OrchestrationInstanceId = instanceId.ToString(),
+                TaskExecutionId = Id.New().ToString(),
+                DispatchId = Id.New().ToString(),
+                Attempt = 1
+            }
+        };
+
+        await provider.GetRequiredService<IIntakeBuffer>().EnqueueWorkAsync(work);
+
+        await mule.Received(1).EnqueueAsync(
+            Arg.Is<ActionKey>(key => key.ToString() == "BackchannelSaga"),
+            work,
+            Arg.Any<Action<EnqueueOptions>>(),
+            Arg.Any<CancellationToken>());
+        await ((ITaskDispatchCallbackReceiptRepository)repository).DidNotReceiveWithAnyArgs()
+            .TryAcceptCallback(default, default!, default!, default);
     }
 
     [Fact]
@@ -650,113 +698,7 @@ public sealed class MuleBufferingTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task MuleRemoteCommandDispatcher_WhenScheduledCommandBecomesDue_RenotifiesCommit()
-    {
-        DurableAction? storedAction = null;
-        var scheduledOnUtc = DateTimeOffset.UtcNow.AddSeconds(1);
-        var muleStorage = Substitute.For<IMuleStorage>();
-        muleStorage
-            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        muleStorage
-            .FindByDeduplicationKeyAsync(
-                Arg.Any<ActionKey>(),
-                Arg.Any<string>(),
-                Arg.Any<CancellationToken>())
-            .Returns(_ => storedAction!.Id);
-        var serializer = Substitute.For<IMuleSerializer>();
-        serializer.Serialize(Arg.Any<RemoteCommand>()).Returns("{\"serialized\":true}");
-        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
-        var dispatcher = BuildServiceProvider(
-                Substitute.For<IMuleClient>(),
-                muleStorage,
-                serializer,
-                commitNotifier)
-            .GetRequiredService<IRemoteCommandDispatcher>();
-        var command = new RemoteCommand
-        {
-            OrchestrationInstanceId = "instance-1",
-            TaskExecutionAttemptId = "attempt-1",
-            DispatchId = "dispatch-1",
-            ScheduledOnUtc = scheduledOnUtc
-        };
-
-        await dispatcher.DispatchAsync(command, CancellationToken.None);
-        await WaitUntilAsync(async () =>
-            await commitNotifier.Received(2).NotifySavedAsync(
-                storedAction!.Id,
-                DispatchLane,
-                Arg.Any<CancellationToken>()));
-    }
-
-    [Fact]
-    public async Task MuleRemoteCommandDispatcher_WhenScheduledNotificationIsAlreadyDue_RenotifiesImmediately()
-    {
-        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
-        var dispatcher = BuildServiceProvider(
-                Substitute.For<IMuleClient>(),
-                Substitute.For<IMuleStorage>(),
-                Substitute.For<IMuleSerializer>(),
-                commitNotifier)
-            .GetRequiredService<IRemoteCommandDispatcher>();
-        var actionId = MuleUlid.NewUlid();
-        var scheduleMethod = dispatcher.GetType().GetMethod(
-            "ScheduleDueNotification",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-
-        scheduleMethod.Invoke(dispatcher, [actionId, MuleSettings.DefaultLane, DateTimeOffset.UtcNow.AddSeconds(-1)]);
-
-        await WaitUntilAsync(async () =>
-            await commitNotifier.Received(1).NotifySavedAsync(
-                actionId,
-                MuleSettings.DefaultLane,
-                Arg.Any<CancellationToken>()));
-    }
-
-    [Fact]
-    public async Task ScheduledDispatchNotificationDoesNotInheritExecutionContext()
-    {
-        var marker = new AsyncLocal<string?> { Value = "saga-context" };
-        var observed = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var notifier = Substitute.For<IMuleCommitNotifier>();
-        notifier.NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => { observed.TrySetResult(marker.Value); return ValueTask.CompletedTask; });
-        using var provider = BuildServiceProvider(Substitute.For<IMuleClient>(), Substitute.For<IMuleStorage>(),
-            Substitute.For<IMuleSerializer>(), notifier);
-        var dispatcher = provider.GetRequiredService<IRemoteCommandDispatcher>();
-        dispatcher.GetType().GetMethod("ScheduleDueNotification", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(dispatcher, [MuleUlid.NewUlid(), MuleSettings.DefaultLane, DateTimeOffset.UtcNow]);
-        Assert.Null(await observed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-    }
-
-    [Fact]
-    public async Task MuleRemoteCommandDispatcher_WhenScheduledRenotifyFails_SwallowsFailure()
-    {
-        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
-        commitNotifier
-            .NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new ValueTask(Task.FromException(new InvalidOperationException("notifier unavailable"))));
-        var dispatcher = BuildServiceProvider(
-                Substitute.For<IMuleClient>(),
-                Substitute.For<IMuleStorage>(),
-                Substitute.For<IMuleSerializer>(),
-                commitNotifier)
-            .GetRequiredService<IRemoteCommandDispatcher>();
-        var actionId = MuleUlid.NewUlid();
-        var scheduleMethod = dispatcher.GetType().GetMethod(
-            "ScheduleDueNotification",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-
-        scheduleMethod.Invoke(dispatcher, [actionId, MuleSettings.DefaultLane, DateTimeOffset.UtcNow.AddSeconds(-1)]);
-
-        await WaitUntilAsync(async () =>
-            await commitNotifier.Received(1).NotifySavedAsync(
-                actionId,
-                MuleSettings.DefaultLane,
-                Arg.Any<CancellationToken>()));
-    }
+    // Future scheduling is covered through the real Mule durable recovery integration tests.
 
     private static ServiceProvider BuildServiceProvider(
         IMuleClient muleClient,
@@ -765,7 +707,8 @@ public sealed class MuleBufferingTests
         IMuleCommitNotifier? commitNotifier = null,
         ITaskDispatchRepository? dispatchRepository = null,
         IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecovery = null,
-        IOrchestrationInstanceCoordinator? coordinator = null)
+        IOrchestrationInstanceCoordinator? coordinator = null,
+        ISagaEngine? sagaEngine = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -787,6 +730,7 @@ public sealed class MuleBufferingTests
             services.AddSingleton(cancellationRecovery);
         }
         if (coordinator is not null) services.AddSingleton(coordinator);
+        if (sagaEngine is not null) services.AddSingleton(sagaEngine);
         return services.BuildServiceProvider();
     }
 

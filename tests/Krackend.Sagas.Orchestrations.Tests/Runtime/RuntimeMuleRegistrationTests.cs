@@ -59,7 +59,8 @@ public sealed class RuntimeMuleRegistrationTests
         using var provider = services.BuildServiceProvider();
         var settings = provider.GetRequiredService<IOptions<MuleSettings>>().Value;
 
-        Assert.Equal(MuleRecoveryMode.Polling, settings.RecoveryMode);
+        Assert.Equal(MuleRecoveryMode.Scheduled, settings.RecoveryMode);
+        Assert.True(settings.ImmediateDispatch);
         Assert.True(settings.Lanes.ContainsKey(RuntimeArtifactProjectionSchedulerDefaults.Lane));
         Assert.True(settings.Lanes.ContainsKey("runtime-standup:replica-a"));
         Assert.True(settings.Lanes.ContainsKey(TriggerLane));
@@ -76,7 +77,7 @@ public sealed class RuntimeMuleRegistrationTests
         Assert.True(projectionLane.ExecutionQueueCapacity > 0);
         Assert.Equal(4, projectionLane.MaxDrainBatchesPerCycle);
         Assert.False(projectionLane.DrainUntilEmpty);
-        Assert.True(settings.Lanes[BackchannelLane].WorkerCount >= settings.Lanes[TriggerLane].WorkerCount);
+        Assert.True(settings.Lanes[TriggerLane].WorkerCount > settings.Lanes[BackchannelLane].WorkerCount);
         Assert.True(settings.Lanes[DispatchLane].WorkerCount >= settings.Lanes[TriggerLane].WorkerCount);
         Assert.Equal(1, settings.Lanes[StatisticsLane].WorkerCount);
         Assert.Equal(1, settings.Lanes[StatisticsLane].MaxDegreeOfParallelism);
@@ -184,8 +185,9 @@ public sealed class RuntimeMuleRegistrationTests
         }
 
         var projectionLane = settings.Lanes[RuntimeArtifactProjectionSchedulerDefaults.Lane];
-        Assert.Equal(TimeSpan.FromSeconds(1), settings.DispatchInterval);
-        Assert.Equal(MuleRecoveryMode.Polling, settings.RecoveryMode);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.DispatchInterval);
+        Assert.Equal(MuleRecoveryMode.Scheduled, settings.RecoveryMode);
+        Assert.True(settings.ImmediateDispatch);
         Assert.Equal(1, projectionLane.WorkerCount);
         Assert.Equal(1, projectionLane.MaxDegreeOfParallelism);
         Assert.Equal(1, projectionLane.DispatchBatchSize);
@@ -203,6 +205,8 @@ public sealed class RuntimeMuleRegistrationTests
         Assert.Equal(0, triggerLane.ExecutionQueueCapacity);
         Assert.Equal(1, triggerLane.MaxDrainBatchesPerCycle);
         Assert.Equal(0, triggerLane.MaxDrainActionsPerCycle);
+        Assert.Equal(TimeSpan.FromSeconds(30), triggerLane.PollingInterval);
+        Assert.Equal(TimeSpan.FromSeconds(1), settings.Lanes[BackchannelLane].PollingInterval);
 
         var zeroIntervalSettings = new MuleSettings
         {
@@ -213,7 +217,7 @@ public sealed class RuntimeMuleRegistrationTests
             configurer.Configure(zeroIntervalSettings);
         }
 
-        Assert.Equal(TimeSpan.FromSeconds(1), zeroIntervalSettings.DispatchInterval);
+        Assert.Equal(TimeSpan.FromSeconds(30), zeroIntervalSettings.DispatchInterval);
     }
 
     [Fact]
@@ -243,6 +247,31 @@ public sealed class RuntimeMuleRegistrationTests
         Assert.Equal(257, settings.Lanes.Values.Sum(lane => lane.MaxDegreeOfParallelism));
         Assert.True(settings.Lanes[BackchannelLane].MaxDegreeOfParallelism > settings.Lanes[TimeoutLane].MaxDegreeOfParallelism);
         Assert.True(settings.Lanes[DispatchLane].MaxDegreeOfParallelism > settings.Lanes[TriggerLane].MaxDegreeOfParallelism);
+    }
+
+    [Fact]
+    public void RuntimeMuleHighThroughputDefaultsDoNotThrottleRealtimeWorkIntoSmallWaves()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.Configure<Krackend.Sagas.Orchestrations.Runtime.Replication.RuntimeReplicaOptions>(options =>
+            options.ReplicaId = "replica-throughput-defaults");
+
+        services.AddKrackendOrchestrationsRuntime().AddMule(
+            _ => { },
+            options => options.Profile = KrackendMuleRuntimeProfile.HighThroughput);
+
+        using var provider = services.BuildServiceProvider();
+        var settings = provider.GetRequiredService<IOptions<MuleSettings>>().Value;
+        var workerCount = settings.Lanes.Values.Sum(lane => lane.WorkerCount);
+
+        Assert.Equal(Math.Clamp(Environment.ProcessorCount * 8, 128, 1_024), workerCount);
+        Assert.True(settings.Lanes.Values.Sum(lane => lane.MaxDegreeOfParallelism) >= 2_048);
+        Assert.True(settings.Lanes[TriggerLane].WorkerCount >= 30);
+        Assert.True(settings.Lanes[DispatchLane].WorkerCount >= 60);
+        Assert.True(settings.Lanes[BackchannelLane].WorkerCount >= 18);
+        Assert.True(settings.Lanes[DispatchLane].MaxDegreeOfParallelism >= 1_000);
     }
 
     [Fact]

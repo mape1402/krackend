@@ -105,7 +105,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 endpointKey,
                 configuration.Topic,
                 configuration.Version,
-                SubscriptionName);
+                SubscriptionName)
+            {
+                Configuration = CreateIngressConfiguration(configuration)
+            };
 
             var attached = _consumerRegistry.TryAttach(registration, out var shouldRegisterEndpoint);
             if (!attached)
@@ -146,16 +149,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                     var messageMetadataAccessor = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
                     var propagationMetadataAccessor = context.Services.GetRequiredService<IOrchestrationPropagationMetadataAccessor>();
                     var resultMetadataAccessor = context.Services.GetRequiredService<IOrchestrationExecutionResultMetadataAccessor>();
-                    using var reader = context.Services.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
-                    var configurations = new List<IngressConfiguration>();
+                    var configurations = _consumerRegistry.GetConfigurations(endpointKey).ToList();
 
-                    IngressConfigurationReadingResult dataset;
-                    do
+                    // Registrations created by current runtime lifecycle code carry
+                    // the complete active route. Retain the storage fallback for
+                    // older/custom connectors that only provide physical endpoint
+                    // information, but keep SQL entirely out of the normal path.
+                    if (configurations.Count == 0 || configurations.All(route => string.IsNullOrWhiteSpace(route.ArtifactId)))
                     {
-                        dataset = await reader.ReadAsync(context.CancellationToken);
-                        configurations.AddRange(dataset.Configurations);
+                        configurations.Clear();
+                        using var reader = context.Services.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
+                        if (reader is ISelectiveMessagingIngressAccessor routes)
+                        {
+                            configurations.AddRange(await routes.ReadMatchingAsync(configuration.Topic, configuration.Version, context.CancellationToken));
+                        }
+                        else
+                        {
+                            IngressConfigurationReadingResult dataset;
+                            do
+                            {
+                                dataset = await reader.ReadAsync(context.CancellationToken);
+                                configurations.AddRange(dataset.Configurations);
+                            }
+                            while (dataset.HasMoreItems);
+                        }
                     }
-                    while (dataset.HasMoreItems);
 
                     var matchingIngress = _ingressSelector
                         .SelectMatching(configurations, configuration.Topic, configuration.Version)
@@ -273,6 +291,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 
         private static string BuildEndpointKey(string topic, string version, string subscription)
             => $"{topic.Trim()}|{version.Trim()}|{subscription.Trim()}".ToLowerInvariant();
+
+        private static IngressConfiguration CreateIngressConfiguration(MessagingConfiguration configuration)
+            => new()
+            {
+                Id = configuration.ConnectorId,
+                ArtifactId = configuration.ArtifactId,
+                IsStaged = configuration.IsStaged,
+                OrchestrationDefinitionKey = configuration.OrchestrationDefinitionKey,
+                OrchestrationVersion = configuration.OrchestrationVersion,
+                DeployedOnUtc = configuration.DeployedOnUtc,
+                IngressKind = configuration.IngressKind,
+                MessageDisposition = configuration.MessageDisposition,
+                IngressTransport = configuration.IngressTransport,
+                SettingsPayload = configuration.SettingsPayload
+            };
 
         private static bool IsAlreadyRegistered(Exception exception)
             => exception.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase) ||

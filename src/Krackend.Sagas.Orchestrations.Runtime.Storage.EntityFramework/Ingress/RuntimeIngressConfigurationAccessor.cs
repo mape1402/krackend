@@ -8,6 +8,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 
 internal sealed class RuntimeIngressConfigurationAccessor :
     IGetAllIngressConfigurationsAccessor,
+    ISelectiveMessagingIngressAccessor,
     IGetIngressConfigurationByArtifactAccessor,
     IGetStagedIngressConfigurationAccessor,
     IGetRollbackIngressConfigurationAccessor,
@@ -20,6 +21,28 @@ internal sealed class RuntimeIngressConfigurationAccessor :
     public RuntimeIngressConfigurationAccessor(RuntimeDbContext dbContext)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+    }
+
+    public async Task<IReadOnlyCollection<IngressConfiguration>> ReadMatchingAsync(string topic, string version,
+        CancellationToken cancellationToken = default)
+    {
+        var routeTopic = topic.ToUpperInvariant();
+        var routeVersion = version.ToUpperInvariant();
+        var rows = await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
+            .Where(x => x.IsActive && x.IngressTransport == IngressTransport.Messaging &&
+                ((x.RouteTopic == routeTopic && x.RouteVersion == routeVersion) || x.RouteTopic == null || x.RouteVersion == null))
+            .Join(_dbContext.RuntimeOrchestrationArtifacts.AsNoTracking().Where(x => x.IsActive && x.Status == RuntimeOrchestrationArtifactStatus.Ready),
+                configuration => configuration.RuntimeOrchestrationArtifactId, artifact => artifact.Id,
+                (configuration, artifact) => new { Configuration = configuration, Artifact = artifact })
+            .ToArrayAsync(cancellationToken);
+        return rows.Select(x => new IngressConfiguration
+        {
+            Id = x.Configuration.Id.ToString(), ArtifactId = x.Artifact.Id.ToString(),
+            OrchestrationDefinitionKey = x.Artifact.OrchestrationDefinitionKey,
+            OrchestrationVersion = x.Artifact.Version.ToString(), DeployedOnUtc = x.Artifact.DeployedOnUtc,
+            IngressKind = x.Configuration.IngressKind, MessageDisposition = x.Configuration.MessageDisposition,
+            IngressTransport = x.Configuration.IngressTransport, SettingsPayload = x.Configuration.SettingsPayload
+        }).ToArray();
     }
 
     public async Task<IngressConfigurationReadingResult> ReadAsync(CancellationToken cancellationToken = default)

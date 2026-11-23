@@ -1,3 +1,5 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
     /// <summary>
@@ -34,5 +36,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         /// Gets or sets a value indicating whether an existing promoted instance was reused.
         /// </summary>
         public bool AlreadyPromoted { get; set; }
+
+        /// <summary>
+        /// Gets the promoted instance while it is still part of the current activation.
+        /// </summary>
+        internal OrchestrationInstance Instance { get; init; }
     }
 }

@@ -16,6 +16,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 /// </summary>
 internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutScheduler
 {
+    private static readonly TimeSpan MissingActionRepairLeadTime = TimeSpan.FromSeconds(10);
     private readonly IMuleStorage _storage;
     private readonly IMuleSerializer _serializer;
     private readonly IMuleCommitNotifier _commitNotifier;
@@ -88,18 +89,13 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         await _storage.AddAsync(action, cancellationToken);
         await _storage.SaveChangesAsync(cancellationToken);
         var actionId = await _storage.FindByDeduplicationKeyAsync(action.Key, action.DeduplicationKey, cancellationToken) ?? action.Id;
-
-        var referenceCapture = await CaptureReferenceAsync(request, actionId, cancellationToken);
-        if (referenceCapture == TimeoutReferenceCaptureResult.NoLongerAwaitingResponse)
-        {
-            // A callback may complete the task between persisting this durable action and acquiring the saga lease
-            // to retain its reference. Do not leave the now-unreachable timer queued until its due date.
-            await CancelPersistedActionAsync(actionId, request.TaskExecutionId, cancellationToken);
-            return new TaskResponseTimeoutScheduleResult(actionId.ToString(), action.Lane);
-        }
-
+        // The deduplication key is a deterministic reference made from task, attempt
+        // and deadline. Persisting the generated action id back into SQL added one
+        // unrelated commit to every successful dispatch. Cancellation and repair can
+        // resolve the same action by this key, so keep the timer durable in Mule and
+        // leave functional saga state in its existing transaction.
         await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);
-        NotifyWhenDue(actionId, action.Lane, action.NextAttemptOnUtc ?? DateTimeOffset.UtcNow);
+
         return new TaskResponseTimeoutScheduleResult(actionId.ToString(), action.Lane);
     }
 
@@ -189,6 +185,14 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         var missing = pageReader is null
             ? await _tasks.GetResponseTimeoutsMissingAction(limit, cancellationToken)
             : await pageReader.GetResponseTimeoutsMissingActionPage(_repairCursor.MissingActionOffset, limit, cancellationToken);
+        // A deterministic Mule key replaces the SQL action-id write on the healthy
+        // path. Consequently a null SQL reference no longer means failure. Inspect
+        // Redis only shortly before the deadline; fresh real-time work must never be
+        // turned back into a five-second polling loop.
+        var repairHorizon = DateTime.UtcNow.Add(MissingActionRepairLeadTime);
+        missing = missing
+            .Where(task => task.ResponseDeadlineUtc <= repairHorizon)
+            .ToArray();
         var unresolvedMissing = 0;
         foreach (var task in missing)
         {
@@ -200,6 +204,16 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
                     .FirstOrDefault(x => x.Status == TaskExecutionStatus.WaitingResponse && x.DispatchId.HasValue);
                 if (attempt?.DispatchId is not { } dispatchId || task.ResponseDeadlineUtc is not { } dueOnUtc)
                 {
+                    continue;
+                }
+
+                var existingActionId = await _storage.FindByDeduplicationKeyAsync(
+                    MuleActionKeys.TaskResponseTimeoutActionKey,
+                    BuildDeduplicationKey(task.Id, attempt.Id, attempt.AttemptNumber, dueOnUtc),
+                    cancellationToken);
+                if (existingActionId is not null)
+                {
+                    scheduled = true;
                     continue;
                 }
 
@@ -245,30 +259,6 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     private static int NextOffset(int offset, int unresolved, int count, int limit)
         => count < limit || unresolved > int.MaxValue - offset ? 0 : offset + unresolved;
 
-    private async Task<TimeoutReferenceCaptureResult> CaptureReferenceAsync(
-        TaskResponseTimeoutScheduleRequest request,
-        global::Mule.Ulid actionId,
-        CancellationToken cancellationToken)
-    {
-        var result = TimeoutReferenceCaptureResult.Deferred;
-        var executed = await _coordinator.TryExecuteAsync(request.OrchestrationInstanceId, async token =>
-        {
-            var task = await _tasks.GetById(request.TaskExecutionId, token);
-            if (task.Status != TaskExecutionStatus.WaitingResponse || task.ResponseDeadlineUtc != request.DueOnUtc)
-            {
-                result = TimeoutReferenceCaptureResult.NoLongerAwaitingResponse;
-                return;
-            }
-
-            task.TimeoutActionId = actionId.ToString();
-            task.TimeoutActionLane = MuleActionKeys.TimeoutLane;
-            await _tasks.Update(task, token);
-            result = TimeoutReferenceCaptureResult.Captured;
-        }, cancellationToken);
-
-        return executed ? result : TimeoutReferenceCaptureResult.Deferred;
-    }
-
     private async Task CancelPersistedActionAsync(
         global::Mule.Ulid actionId,
         Id taskExecutionId,
@@ -290,37 +280,6 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         }
     }
 
-    private void NotifyWhenDue(global::Mule.Ulid actionId, string lane, DateTimeOffset dueOnUtc)
-    {
-        var delay = dueOnUtc - DateTimeOffset.UtcNow;
-        if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
-
-        // Immediate dispatch deliberately does not poll Mule's durable table for future actions. Keep one lightweight
-        // local wake-up for this durable timer; process restart remains safe because Mule's scheduled recovery reads
-        // the persisted next due action on startup. This is a per-timeout timer, never a scan over waiting sagas.
-        var scopeFactory = _scopeFactory;
-        var logger = _logger;
-        void Schedule() => _ = Task.Run(async () =>
-        {
-            try
-            {
-                if (delay > TimeSpan.Zero) await Task.Delay(delay);
-                using var scope = scopeFactory.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<IMuleCommitNotifier>()
-                    .NotifySavedAsync(actionId, lane, CancellationToken.None);
-            }
-            catch (Exception exception)
-            {
-                logger.LogWarning(exception, "Could not notify Mule about due response timeout '{ActionId}'.", actionId);
-            }
-        });
-        if (ExecutionContext.IsFlowSuppressed()) Schedule();
-        else
-        {
-            using (ExecutionContext.SuppressFlow()) Schedule();
-        }
-    }
-
     private static string BuildDeduplicationKey(TaskResponseTimeoutScheduleRequest request)
         => BuildDeduplicationKey(
             request.TaskExecutionId,
@@ -335,10 +294,4 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         DateTime dueOnUtc)
         => string.Join(':', "task-timeout", taskExecutionId, taskExecutionAttemptId, attemptNumber, dueOnUtc.Ticks);
 
-    private enum TimeoutReferenceCaptureResult
-    {
-        Deferred,
-        Captured,
-        NoLongerAwaitingResponse
-    }
 }

@@ -37,5 +37,24 @@
         /// Gets or sets the transport represented by the configuration.
         /// </summary>
         public IngressTransport IngressTransport { get; set; }
+
+        /// <summary>
+        /// Gets or sets how a matching message must be handled by the runtime.
+        /// This value is projected into the transport registration so the hot
+        /// consume path does not have to query runtime storage for every delivery.
+        /// </summary>
+        public IngressMessageDisposition MessageDisposition { get; set; } = IngressMessageDisposition.Process;
+
+        /// <summary>Gets or sets the orchestration definition key that owns the route.</summary>
+        public string OrchestrationDefinitionKey { get; set; } = string.Empty;
+
+        /// <summary>Gets or sets the orchestration version that owns the route.</summary>
+        public string OrchestrationVersion { get; set; } = string.Empty;
+
+        /// <summary>Gets or sets when the owning artifact was deployed.</summary>
+        public DateTime DeployedOnUtc { get; set; }
+
+        /// <summary>Gets or sets the original transport settings payload.</summary>
+        public string SettingsPayload { get; set; } = string.Empty;
     }
 }

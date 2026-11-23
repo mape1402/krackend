@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
@@ -13,19 +14,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         private readonly IMessagingConfigurationSerializer _messagingConfigurationSerializer;
         private readonly IBackchannelMessagingTopicFormatter _backchannelTopicFormatter;
         private readonly IRuntimeIngressConfigurationKeyBuilder _keyBuilder;
+        private readonly RuntimeBackchannelReplyAddressCache _replyAddressCache;
 
         public DefaultRuntimeIngressConfigurationProjector(
             IRuntimeArtifactSerializer artifactSerializer,
             IRuntimeIngressConfigurationRepository repository,
             IMessagingConfigurationSerializer messagingConfigurationSerializer,
             IBackchannelMessagingTopicFormatter backchannelTopicFormatter,
-            IRuntimeIngressConfigurationKeyBuilder keyBuilder)
+            IRuntimeIngressConfigurationKeyBuilder keyBuilder,
+            RuntimeBackchannelReplyAddressCache replyAddressCache = null)
         {
             _artifactSerializer = artifactSerializer ?? throw new ArgumentNullException(nameof(artifactSerializer));
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _messagingConfigurationSerializer = messagingConfigurationSerializer ?? throw new ArgumentNullException(nameof(messagingConfigurationSerializer));
             _backchannelTopicFormatter = backchannelTopicFormatter ?? throw new ArgumentNullException(nameof(backchannelTopicFormatter));
             _keyBuilder = keyBuilder ?? throw new ArgumentNullException(nameof(keyBuilder));
+            _replyAddressCache = replyAddressCache;
         }
 
         public async Task ProjectAsync(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
@@ -40,6 +44,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Archived)
             {
                 await _repository.UpsertForArtifactAsync(artifact.Id, [], cancellationToken);
+                _replyAddressCache?.Invalidate(artifact.Id);
                 return;
             }
 
@@ -67,6 +72,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             configurations.Add(BuildBackchannelConfiguration(artifact.Id, orchestrationArtifact, artifact.Version, now));
 
             await _repository.UpsertForArtifactAsync(artifact.Id, configurations, cancellationToken);
+            _replyAddressCache?.Invalidate(artifact.Id);
         }
 
         private IEnumerable<RuntimeIngressConfiguration> BuildTriggerConfigurations(
@@ -88,7 +94,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             yield return new RuntimeIngressConfiguration
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 RuntimeOrchestrationArtifactId = artifactId,
                 ConfigurationKey = _keyBuilder.BuildTriggerKey(trigger),
                 IngressKind = IngressKind.Trigger,
@@ -112,7 +118,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             DateTime now)
             => new()
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 RuntimeOrchestrationArtifactId = artifactId,
                 ConfigurationKey = _keyBuilder.BuildBackchannelKey(IngressTransport.Messaging),
                 IngressKind = IngressKind.Backchannel,

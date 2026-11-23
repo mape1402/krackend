@@ -8,8 +8,10 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 
 internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
 {
@@ -27,7 +29,9 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
     private readonly IOrchestrationPayloadState _payloadState;
     private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
     private readonly IExecutionPolicyResolver _executionPolicyResolver;
+    private readonly IExecutionSandboxProviderRegistry _executionProviderRegistry;
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
+    private readonly IOrchestrationInstanceCoordinator _instanceCoordinator;
 
     public TaskAttemptDispatcher(
         ITaskRuntimeAdapterRegistry adapterRegistry,
@@ -39,8 +43,10 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         ITaskDispatchRequestPayloadPreparer requestPayloadPreparer,
         IOrchestrationPayloadState payloadState,
         IExecutionPolicyResolver executionPolicyResolver,
+        IExecutionSandboxProviderRegistry executionProviderRegistry,
         IRuntimeStorageUnitOfWork storageUnitOfWork,
-        IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
+        IOrchestrationPropagationMetadataStore propagationMetadataStore = null,
+        IOrchestrationInstanceCoordinator instanceCoordinator = null)
     {
         _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
         _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -51,8 +57,10 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         _executionPolicyResolver = executionPolicyResolver ?? throw new ArgumentNullException(nameof(executionPolicyResolver));
+        _executionProviderRegistry = executionProviderRegistry ?? throw new ArgumentNullException(nameof(executionProviderRegistry));
         _storageUnitOfWork = storageUnitOfWork ?? throw new ArgumentNullException(nameof(storageUnitOfWork));
         _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
+        _instanceCoordinator = instanceCoordinator;
     }
 
     public async Task DispatchAsync(TaskAttemptDispatchRequest request, CancellationToken cancellationToken = default)
@@ -113,7 +121,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         var previousStatus = taskExecution.Status;
         var attempt = new TaskExecutionAttempt
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             TaskExecutionId = taskExecution.Id,
             AttemptNumber = attemptNumber,
             Status = TaskExecutionStatus.Running,
@@ -122,16 +130,30 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         };
         var dispatch = new TaskDispatch
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             TaskExecutionAttemptId = attempt.Id,
             DispatchType = request.Task.DispatchType.ToString(),
             Destination = adapter.GetDestination(request.Task),
             RequestPayload = requestPayload?.DeepClone(),
             DispatchStatus = "Scheduled",
-            CommandId = Id.New().ToString(),
+            CommandId = Id.NewDistributed().ToString(),
             CorrelationId = ResolveCorrelationId(request.Instance, taskExecution),
             ScheduledOnUtc = scheduledOnUtc.UtcDateTime
         };
+
+        if (_dispatchRepository is IEmbeddedTaskTransportStateRepository
+            {
+                EmbedsCurrentTransportState: true
+            })
+        {
+            // The current task, attempt and dispatch share one durable identity when
+            // storage embeds the transport graph. Callback metadata can therefore
+            // address the task directly and recovery can reconstruct both projections
+            // without relational joins or two extra inserts.
+            attempt.Id = taskExecution.Id;
+            dispatch.Id = taskExecution.Id;
+            dispatch.TaskExecutionAttemptId = taskExecution.Id;
+        }
         attempt.DispatchId = dispatch.Id;
         ApplyExecutionPolicySnapshot(taskExecution, attempt, dispatch, executionPolicy.ResolvedPolicy);
 
@@ -174,7 +196,28 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         }
 
         var preparedOnUtc = DateTime.UtcNow;
-        dispatch.DispatchStatus = "QueuePending";
+        var waitsForImmediateResponse = !hasDeferredDispatch &&
+            request.Task.DispatchType != TaskDispatchType.FireAndForget;
+        if (waitsForImmediateResponse)
+        {
+            // The dispatch graph is the durable publication intent. Arm the response
+            // state in that same transaction instead of writing task + attempt again
+            // after the transport accepts the command. Publication confirmation then
+            // only has to stamp the independent dispatch row.
+            PrepareImmediateResponseWait(request, taskExecution, attempt, preparedOnUtc);
+            preparedDispatch.Command.PreparedResponseDeadlineUtc = taskExecution.ResponseDeadlineUtc;
+            preparedDispatch.Command.IsPreparedDirectActivation = true;
+            // Recovery deserializes the command snapshot from the dispatch row. Persist
+            // the direct-activation hints with that snapshot, while queued replays still
+            // perform their normal authoritative validation.
+            dispatch.Metadata[DeliveryCommandMetadataKey] = SerializeRecoveryCommand(preparedDispatch.Command);
+        }
+        // A healthy response-bearing command is already armed for its callback in this
+        // transaction. Do not insert it into QueuePending: that filtered index belongs
+        // to exceptional Mule/recovery work, not to every successful orchestration.
+        // SentOnUtc == null remains the durable crash-recovery marker until either the
+        // callback folds publication confirmation into its commit or recovery republishes.
+        dispatch.DispatchStatus = waitsForImmediateResponse ? "WaitingResponse" : "QueuePending";
         request.Instance.LastUpdatedOnUtc = preparedOnUtc;
         await PersistDispatchGraphAsync(
             request,
@@ -188,61 +231,83 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             BuildQueuePreparedMessage(request, attemptNumber),
             preparedDispatch.RequestPayload,
             cancellationToken);
+        request.State?.TrackTask(taskExecution);
+        request.StateUpdated = request.State is not null;
 
-        await QueueAsync(
+        var activation = new TaskDispatchActivation(
             request,
-            executionPolicy,
             taskExecution,
             attempt,
             dispatch,
-            preparedDispatch,
-            hasDeferredDispatch,
-            cancellationToken);
-    }
-
-    private async Task QueueAsync(
-        TaskAttemptDispatchRequest request,
-        ExecutionPolicyResolutionResult executionPolicy,
-        TaskExecution taskExecution,
-        TaskExecutionAttempt attempt,
-        TaskDispatch dispatch,
-        PreparedDispatch preparedDispatch,
-        bool hasDeferredDispatch,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await executionPolicy.Provider.DispatchAsync(new ExecutionEnvelope
+            executionPolicy.Provider.ProviderKey,
+            new ExecutionEnvelope
             {
                 TaskRequest = preparedDispatch.CommandRequest,
                 Command = preparedDispatch.Command,
                 ResolvedPolicy = executionPolicy.ResolvedPolicy
-            }, cancellationToken);
+            },
+            hasDeferredDispatch);
 
-            await MarkDeliveryAcceptedAsync(
-                request,
-                taskExecution,
-                attempt,
-                dispatch,
-                hasDeferredDispatch,
+        if (_instanceCoordinator is IOrchestrationPostLeaseWork postLeaseWork)
+            await postLeaseWork.ExecuteIsolatedAfterLeaseReleaseAsync(
+                request.Instance.Id,
+                (services, token) => services.GetRequiredService<ITaskAttemptDispatcher>()
+                    .ActivateAsync(activation, token),
                 cancellationToken);
+        else
+            await ActivateAsync(activation, cancellationToken);
+    }
+
+    public async Task ActivateAsync(
+        TaskDispatchActivation activation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(activation);
+        var request = activation.Request;
+        var taskExecution = activation.TaskExecution;
+        var attempt = activation.Attempt;
+        var dispatch = activation.Dispatch;
+
+        try
+        {
+            if (!_executionProviderRegistry.TryGet(activation.ProviderKey, out var provider))
+            {
+                throw new RemoteCommandConfigurationException(
+                    $"Execution provider '{activation.ProviderKey}' is not available in the activation scope.");
+            }
+
+            await provider.DispatchAsync(activation.Envelope, cancellationToken);
+
+            if (provider is not IExecutionDispatchLifecycleProvider { OwnsDispatchLifecycle: true })
+            {
+                await MutateAfterActivationAsync(request.Instance.Id, token => MarkDeliveryAcceptedAsync(
+                    request, taskExecution, attempt, dispatch, activation.HasDeferredDispatch, token), cancellationToken);
+            }
         }
         catch (RemoteCommandConfigurationException exception)
         {
-            await MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+            await MutateAfterActivationAsync(request.Instance.Id, token => MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, token), cancellationToken);
         }
         catch (RemoteCommandDeliveryUncertainException exception)
         {
-            await MarkDeliveryDeferredAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+            await MutateAfterActivationAsync(request.Instance.Id, token => MarkDeliveryDeferredAsync(request, taskExecution, attempt, dispatch, exception, token), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
+        catch (RuntimeStateConflictException) { throw; }
         catch (Exception exception)
         {
-            await MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+            await MutateAfterActivationAsync(request.Instance.Id, token => MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, token), cancellationToken);
         }
+    }
+
+    private async Task MutateAfterActivationAsync(Id instanceId, Func<CancellationToken, Task> mutation, CancellationToken token)
+    {
+        if (_instanceCoordinator is null) await mutation(token);
+        else await _instanceCoordinator.TryExecuteAsync(instanceId, mutation, token, waitForLease: false);
+        // Another advance can win; the persisted delivery intent remains recoverable.
     }
 
     private async Task<PreparedDispatch> PrepareDispatchAsync(
@@ -302,14 +367,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             ReplyAddress = descriptor.ReplyAddress
         };
 
-        var policySnapshot = dispatch.Metadata.TryGetValue("ResolvedExecutionPolicy", out var resolvedPolicy)
-            ? resolvedPolicy?.DeepClone()
-            : null;
         dispatch.Metadata = RemoteCommandMetadataBuilder.Build(messageMetadata, propagationMetadata);
-        if (policySnapshot is not null)
-        {
-            dispatch.Metadata["ResolvedExecutionPolicy"] = policySnapshot;
-        }
 
         var command = new RemoteCommand
         {
@@ -330,8 +388,29 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         };
 
         dispatch.Metadata[DeliveryProviderKeyMetadataKey] = JsonValue.Create(executionPolicy.ResolvedPolicy.ProviderKey);
-        dispatch.Metadata[DeliveryCommandMetadataKey] = JsonSerializer.SerializeToNode(command, SerializerOptions);
+        // The attempt row is the single durable owner of the request payload. The
+        // recovery command stores transport/routing state only; persisting the same
+        // growing JSON in the attempt, dispatch and serialized command made one task
+        // fan out into multiple large SQL writes.
+        dispatch.Metadata[DeliveryCommandMetadataKey] = SerializeRecoveryCommand(command);
+        dispatch.RequestPayload = null;
         return new PreparedDispatch(commandRequest, command, requestPayload);
+    }
+
+    private static JsonNode SerializeRecoveryCommand(RemoteCommand command)
+    {
+        var snapshot = JsonSerializer.SerializeToNode(command, SerializerOptions)
+            ?? throw new InvalidOperationException("The durable delivery command could not be serialized.");
+        if (snapshot is JsonObject commandObject)
+        {
+            commandObject.Remove("payload");
+            // Message and propagation metadata already have canonical entries in the
+            // dispatch metadata envelope. Recovery rehydrates them from there instead
+            // of persisting a second full copy inside the command snapshot.
+            commandObject.Remove("messageMetadata");
+            commandObject.Remove("propagationMetadata");
+        }
+        return snapshot;
     }
 
     private async Task PersistDispatchGraphAsync(
@@ -347,40 +426,86 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         JsonNode payload,
         CancellationToken cancellationToken)
     {
+        // A coordinated engine activation already owns a deferred unit-of-work and
+        // commits before post-lease publication runs. Do not flush each dispatch graph
+        // inside that transaction: parallel task decisions would otherwise turn one
+        // callback into N SQL batches plus the final batch. Standalone callers still
+        // own and flush their transaction here.
+        var ownsFlush = _storageUnitOfWork.AutoSaveChanges;
+        if (!ownsFlush)
+        {
+            await PersistDispatchGraphChangesAsync(
+                request,
+                taskExecution,
+                attempt,
+                dispatch,
+                transitionType,
+                fromStatus,
+                toStatus,
+                occurredOnUtc,
+                message,
+                payload,
+                cancellationToken);
+            return;
+        }
+
         await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
         using (_storageUnitOfWork.DeferAutoSave())
         {
-            if (request.Kind == TaskAttemptDispatchKind.Initial)
-            {
-                await _taskRepository.Create(taskExecution, cancellationToken);
-            }
-            else
-            {
-                await _taskRepository.Update(taskExecution, cancellationToken);
-            }
-
-            await _attemptRepository.Create(attempt, cancellationToken);
-            await _dispatchRepository.Create(dispatch, cancellationToken);
-            await _instanceRepository.Update(request.Instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = request.Instance.Id,
-                StageExecutionId = request.StageExecutionId,
-                TaskExecutionId = taskExecution.Id,
-                TaskExecutionAttemptId = attempt.Id,
-                TransitionType = transitionType,
-                FromStatus = fromStatus,
-                ToStatus = toStatus,
-                OccurredOnUtc = occurredOnUtc,
-                Message = message,
-                Payload = payload?.DeepClone(),
-                ProducedBy = nameof(TaskAttemptDispatcher)
-            }, cancellationToken);
+            await PersistDispatchGraphChangesAsync(
+                request,
+                taskExecution,
+                attempt,
+                dispatch,
+                transitionType,
+                fromStatus,
+                toStatus,
+                occurredOnUtc,
+                message,
+                payload,
+                cancellationToken);
             await _storageUnitOfWork.SaveChanges(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task PersistDispatchGraphChangesAsync(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        string transitionType,
+        string fromStatus,
+        string toStatus,
+        DateTime occurredOnUtc,
+        string message,
+        JsonNode payload,
+        CancellationToken cancellationToken)
+    {
+        if (request.Kind == TaskAttemptDispatchKind.Initial)
+            await _taskRepository.Create(taskExecution, cancellationToken);
+        else
+            await _taskRepository.Update(taskExecution, cancellationToken);
+
+        await _attemptRepository.Create(attempt, cancellationToken);
+        await _dispatchRepository.Create(dispatch, cancellationToken);
+        await _instanceRepository.Update(request.Instance, cancellationToken);
+        await _transitionRepository.Create(new ExecutionTransition
+        {
+            Id = Id.NewDistributed(),
+            OrchestrationInstanceId = request.Instance.Id,
+            StageExecutionId = request.StageExecutionId,
+            TaskExecutionId = taskExecution.Id,
+            TaskExecutionAttemptId = attempt.Id,
+            TransitionType = transitionType,
+            FromStatus = fromStatus,
+            ToStatus = toStatus,
+            OccurredOnUtc = occurredOnUtc,
+            Message = message,
+            Payload = payload?.DeepClone(),
+            ProducedBy = nameof(TaskAttemptDispatcher)
+        }, cancellationToken);
     }
 
     private async Task MarkDispatchConfigurationFailedAsync(
@@ -412,7 +537,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
                 await _instanceRepository.Update(request.Instance, cancellationToken);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = request.Instance.Id,
                     StageExecutionId = request.StageExecutionId,
                     TaskExecutionId = taskExecution.Id,
@@ -455,7 +580,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             await _instanceRepository.Update(request.Instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = request.Instance.Id,
                 StageExecutionId = request.StageExecutionId,
                 TaskExecutionId = failedTask.Id,
@@ -565,6 +690,13 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         Exception exception,
         CancellationToken cancellationToken)
     {
+        var persisted = await _dispatchRepository.TryGetById(dispatch.Id, cancellationToken);
+        if (persisted is null || !string.Equals(persisted.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase)) return;
+        dispatch = persisted;
+        taskExecution = await _taskRepository.GetById(taskExecution.Id, cancellationToken);
+        attempt = await _attemptRepository.GetById(attempt.Id, cancellationToken);
+        var instance = await _instanceRepository.GetById(request.Instance.Id, cancellationToken);
+        if (taskExecution.LastAttemptNumber != attempt.AttemptNumber) return;
         var failedOnUtc = DateTime.UtcNow;
         dispatch.DispatchStatus = "Failed";
         dispatch.FailedOnUtc = failedOnUtc;
@@ -575,10 +707,10 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         attempt.FailedOnUtc = failedOnUtc;
         attempt.ErrorCode = "CommandDispatchFailed";
         attempt.ErrorMessage = exception.Message;
-        request.Instance.Status = OrchestrationInstanceStatus.Running;
-        request.Instance.FailedOnUtc = null;
-        request.Instance.ErrorSummary = exception.Message;
-        request.Instance.LastUpdatedOnUtc = failedOnUtc;
+        instance.Status = OrchestrationInstanceStatus.Running;
+        instance.FailedOnUtc = null;
+        instance.ErrorSummary = exception.Message;
+        instance.LastUpdatedOnUtc = failedOnUtc;
 
         await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
         using (_storageUnitOfWork.DeferAutoSave())
@@ -586,11 +718,11 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             await _dispatchRepository.Update(dispatch, cancellationToken);
             await _attemptRepository.Update(attempt, cancellationToken);
             await _taskRepository.Update(taskExecution, cancellationToken);
-            await _instanceRepository.Update(request.Instance, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = request.Instance.Id,
+                Id = Id.NewDistributed(),
+                OrchestrationInstanceId = instance.Id,
                 StageExecutionId = request.StageExecutionId,
                 TaskExecutionId = taskExecution.Id,
                 TaskExecutionAttemptId = attempt.Id,
@@ -634,7 +766,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             await _dispatchRepository.Update(persistedDispatch, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = request.Instance.Id,
                 StageExecutionId = request.StageExecutionId,
                 TaskExecutionId = taskExecution.Id,
@@ -677,7 +809,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             await _dispatchRepository.Update(persistedDispatch, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = request.Instance.Id,
                 StageExecutionId = request.StageExecutionId,
                 TaskExecutionId = taskExecution.Id,
@@ -702,7 +834,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
     private static TaskExecution CreateInitialTaskExecution(TaskAttemptDispatchRequest request, DateTime now)
         => new()
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = request.Instance.Id,
             StageExecutionId = request.StageExecutionId,
             TaskKey = request.Task.Key,
@@ -718,7 +850,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             StartedOnUtc = now,
             LastAttemptNumber = 1,
             CorrelationId = string.IsNullOrWhiteSpace(request.Instance.CorrelationId)
-                ? Id.New().ToString()
+                ? Id.NewDistributed().ToString()
                 : request.Instance.CorrelationId
         };
 
@@ -747,9 +879,26 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             requestPayload);
     }
 
+    private static void PrepareImmediateResponseWait(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        DateTime waitingSinceUtc)
+    {
+        taskExecution.Status = TaskExecutionStatus.WaitingResponse;
+        taskExecution.WaitingSinceUtc = waitingSinceUtc;
+        taskExecution.ResponseDeadlineUtc = request.Task.TimeoutPolicy is { } timeoutPolicy
+            ? waitingSinceUtc.Add(timeoutPolicy.Timeout.Value)
+            : null;
+        taskExecution.TimeoutActionId = null;
+        taskExecution.TimeoutActionLane = null;
+        attempt.Status = TaskExecutionStatus.WaitingResponse;
+        attempt.WaitingSinceUtc = waitingSinceUtc;
+    }
+
     private static string ResolveCorrelationId(OrchestrationInstance instance, TaskExecution taskExecution)
         => string.IsNullOrWhiteSpace(taskExecution.CorrelationId)
-            ? string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+            ? string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.NewDistributed().ToString() : instance.CorrelationId
             : taskExecution.CorrelationId;
 
     private static string ResolveQueuedTransitionType(TaskAttemptDispatchKind kind, bool hasDeferredDispatch)
@@ -799,7 +948,6 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         if (snapshot is not null)
         {
             attempt.Metadata["ResolvedExecutionPolicy"] = snapshot.DeepClone();
-            dispatch.Metadata["ResolvedExecutionPolicy"] = snapshot.DeepClone();
         }
 
         taskExecution.Metadata["ResolvedExecutionProvider"] = JsonValue.Create(policy.ProviderKey);
@@ -816,3 +964,12 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         RemoteCommand Command,
         JsonNode RequestPayload);
 }
+
+internal sealed record TaskDispatchActivation(
+    TaskAttemptDispatchRequest Request,
+    TaskExecution TaskExecution,
+    TaskExecutionAttempt Attempt,
+    TaskDispatch Dispatch,
+    string ProviderKey,
+    ExecutionEnvelope Envelope,
+    bool HasDeferredDispatch);

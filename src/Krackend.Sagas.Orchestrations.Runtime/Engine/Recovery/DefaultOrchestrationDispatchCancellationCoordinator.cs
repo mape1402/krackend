@@ -84,6 +84,14 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                         continue;
                     }
 
+                    // A callback-confirmed delivery has already finished at the provider.
+                    // Re-cancelling every acknowledged dispatch when the instance completes
+                    // turns one terminal transition into an O(number of tasks) recovery wave.
+                    if (IsCallbackTerminal(dispatch.DispatchStatus))
+                    {
+                        continue;
+                    }
+
                     var previousDispatchStatus = dispatch.DispatchStatus;
                     var requiresLogicalFence = IsPending(dispatch.DispatchStatus);
                     if (requiresLogicalFence)
@@ -127,7 +135,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                     {
                         await _transitionRepository.Create(new ExecutionTransition
                         {
-                            Id = Id.New(),
+                            Id = Id.NewDistributed(),
                             OrchestrationInstanceId = instance.Id,
                             StageExecutionId = task.StageExecutionId,
                             TaskExecutionId = task.Id,
@@ -335,7 +343,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
             await _dispatchRepository.Update(dispatch, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = task.OrchestrationInstanceId,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
@@ -387,4 +395,9 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
            string.Equals(dispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(dispatchStatus, "RetryPending", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(dispatchStatus, "ReplayPending", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCallbackTerminal(string dispatchStatus)
+        => string.Equals(dispatchStatus, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dispatchStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase);
 }

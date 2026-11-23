@@ -66,6 +66,19 @@
         public DateTimeOffset? ScheduledOnUtc { get; set; }
 
         /// <summary>
+        /// Gets or sets the response deadline already persisted with a freshly prepared
+        /// dispatch. Recovery ignores this hint and resolves authoritative state again.
+        /// </summary>
+        public DateTime? PreparedResponseDeadlineUtc { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating that this command is the first in-process
+        /// activation of the dispatch graph that was just committed by the engine.
+        /// Durable replays never trust this hint and always revalidate storage state.
+        /// </summary>
+        public bool IsPreparedDirectActivation { get; set; }
+
+        /// <summary>
         /// Gets or sets the orchestration message metadata that must be attached by the transport adapter.
         /// </summary>
         public Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.OrchestrationMessageMetadata MessageMetadata { get; set; }

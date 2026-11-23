@@ -2,7 +2,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -11,25 +10,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
     {
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
-        private readonly IOrchestrationDispatchCancellationCoordinator _dispatchCancellationCoordinator;
         private readonly IRuntimeStateTransaction _stateTransaction;
 
         public CompleteInstanceDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             IExecutionTransitionRepository transitionRepository,
-            IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
             IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
-            _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
             _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(CompleteInstanceDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
-            var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var instance = decision.Instance ?? await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             if (IsTerminal(instance.Status))
             {
                 return;
@@ -42,14 +38,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.FinalOutcome = "Completed";
             instance.IdleSinceUtc = null;
             instance.IdleExpiresOnUtc = null;
-            instance.DispatchCancellationPending = true;
+            // Successful completion is reachable only after every task is terminal.
+            // Its callbacks have already acknowledged their dispatches, so scheduling
+            // cancellation here only creates an N+1 scan of tasks/attempts/dispatches.
+            // Unsuccessful terminal handlers retain durable cancellation recovery.
+            instance.DispatchCancellationPending = false;
 
             await PersistStateAsync(async token =>
             {
                 await _instanceRepository.Update(instance, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     TransitionType = "InstanceCompleted",
                     FromStatus = previousStatus.ToString(),
@@ -59,10 +59,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     ProducedBy = nameof(CompleteInstanceDecisionHandler)
                 }, token);
             }, cancellationToken);
-            await _dispatchCancellationCoordinator.CancelPendingAsync(
-                instance,
-                "Orchestration instance completed before this durable dispatch was published.",
-                cancellationToken);
         }
 
         private static bool IsTerminal(OrchestrationInstanceStatus status)

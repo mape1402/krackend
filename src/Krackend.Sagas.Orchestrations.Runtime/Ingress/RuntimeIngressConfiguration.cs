@@ -42,6 +42,35 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         /// </summary>
         public required string SettingsPayload { get; set; }
 
+        /// <summary>Gets or sets the normalized messaging endpoint used by the selective route index.</summary>
+        public string RouteTopic { get; set; }
+
+        /// <summary>Gets or sets the normalized messaging version used by the selective route index.</summary>
+        public string RouteVersion { get; set; }
+
+        /// <summary>Projects the transport settings once when a route is written.</summary>
+        public void ProjectMessagingRoute()
+        {
+            RouteTopic = RouteVersion = null;
+            if (IngressTransport != IngressTransport.Messaging) return;
+            try
+            {
+                using var settings = System.Text.Json.JsonDocument.Parse(SettingsPayload);
+                if (settings.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+                if (settings.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+                if (settings.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+                foreach (var property in settings.RootElement.EnumerateObject())
+                {
+                    if (property.Value.ValueKind != System.Text.Json.JsonValueKind.String) continue;
+                    if (string.Equals(property.Name, "topic", StringComparison.OrdinalIgnoreCase))
+                        RouteTopic = property.Value.GetString()?.ToUpperInvariant();
+                    else if (string.Equals(property.Name, "version", StringComparison.OrdinalIgnoreCase))
+                        RouteVersion = property.Value.GetString()?.ToUpperInvariant();
+                }
+            }
+            catch (System.Text.Json.JsonException) { /* Legacy invalid settings retain the normal selector's rejection. */ }
+        }
+
         /// <summary>
         /// Gets or sets a value indicating whether this ingress configuration is active.
         /// </summary>

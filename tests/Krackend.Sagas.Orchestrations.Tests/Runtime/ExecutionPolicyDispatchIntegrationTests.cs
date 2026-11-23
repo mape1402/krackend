@@ -30,7 +30,7 @@ public sealed class ExecutionPolicyDispatchIntegrationTests
 
         Assert.Equal(ExecutionConstants.BuiltInLocalProvider, attempt.Metadata["ResolvedExecutionPolicy"]!["providerKey"]!.GetValue<string>());
         Assert.Equal(ExecutionConstants.InProcessTrustedMode, attempt.Metadata["ResolvedExecutionPolicy"]!["executionMode"]!.GetValue<string>());
-        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, dispatch.Metadata["ResolvedExecutionPolicy"]!["providerKey"]!.GetValue<string>());
+        Assert.False(dispatch.Metadata.ContainsKey("ResolvedExecutionPolicy"));
     }
 
     [Fact]

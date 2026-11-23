@@ -6,4 +6,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 internal interface ITaskAttemptDispatcher
 {
     Task DispatchAsync(TaskAttemptDispatchRequest request, CancellationToken cancellationToken = default);
+
+    Task ActivateAsync(TaskDispatchActivation activation, CancellationToken cancellationToken = default);
 }

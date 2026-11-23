@@ -676,6 +676,17 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime?>("AcknowledgedOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("CallbackAcceptedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("CallbackPending")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("CallbackReceiptId")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CommandId")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -706,6 +717,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PendingCallbackPayload")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("PhysicalCancellationAttemptCount")
@@ -743,6 +757,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasIndex("TaskExecutionAttemptId")
                         .IsUnique();
+
+                    b.HasIndex("CallbackPending", "CallbackAcceptedOnUtc");
 
                     b.ToTable("TaskDispatches", "Runtime");
                 });
@@ -1154,6 +1170,14 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("RouteTopic")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("RouteVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RuntimeOrchestrationArtifactId")
                         .IsRequired()
                         .HasColumnType("binary(16)");
@@ -1173,6 +1197,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .IsUnique();
 
                     b.HasIndex("IsActive", "IngressTransport", "IngressKind");
+
+                    b.HasIndex("RouteTopic", "RouteVersion", "IsActive");
 
                     b.ToTable("RuntimeIngressConfigurations", "Runtime");
                 });
@@ -1419,6 +1445,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("DeferralReasonCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -1450,6 +1480,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<int>("PendingReason")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset?>("StartedOnUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1466,6 +1499,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("Status", "CompletedOnUtc");
 
                     b.HasIndex("Status", "LockedOnUtc");
+
+                    b.HasIndex("Status", "PendingReason", "NextAttemptOnUtc");
 
                     b.HasIndex("Lane", "Status", "NextAttemptOnUtc", "CreatedOnUtc");
 

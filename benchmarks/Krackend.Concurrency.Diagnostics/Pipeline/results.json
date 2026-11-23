@@ -1,0 +1,25 @@
+[
+  {
+    "test": "busy_instance_messages_block_independent_instance_in_mule_executor",
+    "distinctInstances": 2,
+    "laneExecutionSlots": 2,
+    "independentLeaseAvailable": true,
+    "healthyStartedBeforeContendersFinished": false,
+    "healthyQueueDelayMs": 2026,
+    "busyActionsFailed": 2,
+    "busyActionsRetryDelaySeconds": [
+      29.9775851,
+      29.977612
+    ],
+    "distinctActionScopeServices": 3,
+    "explanation": "Two A contenders occupy both execution slots while waiting for A\u0027s lease; B has a free lease but waits in the shared lane."
+  },
+  {
+    "test": "bounded_commit_notification_queue_holds_callers_instance_lease",
+    "queueCapacity": 1,
+    "completedBeforeQueueDrained": false,
+    "sameInstanceLeaseAvailableBeforeDrain": false,
+    "completedAfterQueueDrain": true,
+    "explanation": "NotifySavedAsync awaits a bounded queue write inside the caller\u0027s lease; the lease stays occupied until capacity returns."
+  }
+]

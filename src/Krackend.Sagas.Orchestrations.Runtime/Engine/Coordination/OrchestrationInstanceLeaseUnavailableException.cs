@@ -3,7 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 
 /// <summary>
-/// Indicates that another runtime node currently owns the lease for an orchestration instance.
+/// Indicates that an operation could not acquire the lease for an orchestration instance.
 /// </summary>
 public sealed class OrchestrationInstanceLeaseUnavailableException : InvalidOperationException
 {
@@ -12,7 +12,7 @@ public sealed class OrchestrationInstanceLeaseUnavailableException : InvalidOper
     /// </summary>
     /// <param name="instanceId">Orchestration instance id whose lease was unavailable.</param>
     public OrchestrationInstanceLeaseUnavailableException(Id instanceId)
-        : base($"Orchestration instance '{instanceId}' is already being processed by another runtime node.")
+        : base($"The lease for orchestration instance '{instanceId}' is unavailable. Another operation may hold it in this process or another runtime replica.")
     {
         InstanceId = instanceId;
     }

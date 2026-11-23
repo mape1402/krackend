@@ -62,7 +62,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _instanceRepository.Update(instance, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = decision.StageExecutionId,
                     TaskExecutionId = decision.TaskExecutionId,

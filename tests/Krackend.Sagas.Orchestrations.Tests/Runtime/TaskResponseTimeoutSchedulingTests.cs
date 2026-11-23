@@ -20,18 +20,8 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class TaskResponseTimeoutSchedulingTests
 {
-    [Fact]
-    public async Task TimeoutNotificationDoesNotInheritExecutionContext()
-    {
-        using var fixture = CreateFixture();
-        var marker = new AsyncLocal<string?> { Value = "saga-context" };
-        var observed = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        fixture.Notifier.NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => { observed.TrySetResult(marker.Value); return ValueTask.CompletedTask; });
-        fixture.Scheduler.GetType().GetMethod("NotifyWhenDue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(fixture.Scheduler, [MuleUlid.NewUlid(), "runtime-timeout", DateTimeOffset.UtcNow]);
-        Assert.Null(await observed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-    }
+    // Per-timeout local wakeups were removed. The real durable recovery path is
+    // covered by RuntimeParallelExecutionTests.CooperativeTimeoutKeepsItsActionAndAttemptBudget.
 
     [Theory]
     [InlineData(1, true)]
@@ -477,15 +467,10 @@ public sealed class TaskResponseTimeoutSchedulingTests
 
         await action.ExecuteAsync(context, CancellationToken.None);
 
-        await scheduler.Received(1).ScheduleAsync(
-            Arg.Is<TaskResponseTimeoutScheduleRequest>(request =>
-                request.OrchestrationInstanceId == instanceId &&
-                request.TaskExecutionId == taskId &&
-                request.TaskExecutionAttemptId == attemptId &&
-                request.DispatchId == dispatchId &&
-                request.AttemptNumber == 2 &&
-                request.DueOnUtc == nextDeadline),
-            Arg.Any<CancellationToken>());
+        await scheduler.DidNotReceive().ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>());
+        var deferral = ReadDeferral(context);
+        Assert.Equal(new DateTimeOffset(DateTime.SpecifyKind(nextDeadline, DateTimeKind.Utc)), deferral.Due);
+        Assert.Equal("krackend.timeout-before-deadline", deferral.Reason);
     }
 
     [Fact]
@@ -591,7 +576,8 @@ public sealed class TaskResponseTimeoutSchedulingTests
                 AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
             });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, CancellationToken.None));
+        await action.ExecuteAsync(context, CancellationToken.None);
+        Assert.Equal("krackend.timeout-pending", ReadDeferral(context).Reason);
         await scheduler.DidNotReceive().ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>());
     }
 
@@ -615,9 +601,18 @@ public sealed class TaskResponseTimeoutSchedulingTests
                 AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
             });
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, CancellationToken.None));
-        Assert.Contains("on-time response", error.Message);
-        Assert.Contains(taskId.ToString(), error.Message);
+        await action.ExecuteAsync(context, CancellationToken.None);
+        Assert.Equal("krackend.response-accepted-pending", ReadDeferral(context).Reason);
+    }
+
+    private static (DateTimeOffset Due, string Reason) ReadDeferral(MuleActionContext context)
+    {
+        var value = typeof(MuleActionContext).GetMethod("GetDeferral", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(context, null);
+        Assert.NotNull(value);
+        var due = (DateTimeOffset)value.GetType().GetProperty("NotBeforeUtc")!.GetValue(value)!;
+        var reason = value.GetType().GetProperty("Reason")!.GetValue(value)!;
+        return (due, (string)reason.GetType().GetProperty("Value")!.GetValue(reason)!);
     }
 
     private static TimeoutSchedulerFixture CreateFixture(IOrchestrationTimeoutProcessor? timeoutProcessor = null)

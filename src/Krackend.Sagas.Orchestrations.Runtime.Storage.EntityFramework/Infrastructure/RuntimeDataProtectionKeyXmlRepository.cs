@@ -21,7 +21,13 @@ internal sealed class RuntimeDataProtectionKeyXmlRepository : IXmlRepository
         var keyXml = dbContext.DataProtectionKeys
             .AsNoTracking()
             .Select(x => x.Xml)
-            .ToArray();
+            // IXmlRepository is a synchronous ASP.NET Core contract, but providers
+            // such as Npgsql multiplexing intentionally reject synchronous commands.
+            // Start the provider's asynchronous pipeline and bridge only at this
+            // infrequent key-ring boundary.
+            .ToArrayAsync()
+            .GetAwaiter()
+            .GetResult();
 
         return keyXml.Select(XElement.Parse).ToArray();
     }
@@ -37,6 +43,8 @@ internal sealed class RuntimeDataProtectionKeyXmlRepository : IXmlRepository
             FriendlyName = friendlyName ?? string.Empty,
             Xml = element.ToString(SaveOptions.DisableFormatting)
         });
-        dbContext.SaveChanges();
+        dbContext.SaveChangesAsync()
+            .GetAwaiter()
+            .GetResult();
     }
 }

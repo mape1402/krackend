@@ -1,0 +1,233 @@
+name: krackend-demo-lab
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD in .env}
+    ports: ["127.0.0.1:15433:1433"]
+    volumes: [demo-sql:/var/opt/mssql]
+    healthcheck:
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$MSSQL_SA_PASSWORD\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  runtime-sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD in .env}
+    ports: ["127.0.0.1:15434:1433"]
+    volumes: [demo-runtime-sql:/var/opt/mssql]
+    healthcheck:
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$MSSQL_SA_PASSWORD\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  runtime-postgres:
+    profiles: ["postgres"]
+    image: postgres:18-alpine
+    command:
+      - postgres
+      - -c
+      - max_connections=400
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - wal_buffers=64MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_timeout=30min
+      - -c
+      - synchronous_commit=on
+      - -c
+      - wal_sync_method=open_datasync
+      - -c
+      - commit_delay=500
+      - -c
+      - commit_siblings=3
+      - -c
+      - wal_compression=on
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_wal_io_timing=on
+    environment:
+      POSTGRES_DB: krackend_runtime
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: ${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD in .env}
+    ports: ["127.0.0.1:15435:5432"]
+    volumes: [demo-runtime-postgres:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d krackend_runtime"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  rabbit:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: demo
+      RABBITMQ_DEFAULT_PASS: ${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD in .env}
+    ports: ["127.0.0.1:15673:15672", "127.0.0.1:15674:5672"]
+    volumes:
+      - demo-rabbit:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:16379:6379"]
+    volumes: [demo-redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:18025:8025", "127.0.0.1:11025:1025"]
+  sales:
+    build:
+      context: ../../..
+      dockerfile: agents/stress/docker/Dockerfile
+      args:
+        PROJECT_PATH: agents/stress/Sales/src/Sales.Api/Sales.Api.csproj
+        APP_DLL: Sales.Api.dll
+    environment:
+      ConnectionStrings__Demo: "Server=sql;Database=SalesDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True;Min Pool Size=16;Max Pool Size=300;Enlist=false"
+      Demo__SqlPoolWarmConnections: "64"
+      # Startup floor only; .NET keeps its 32,767-worker maximum and adapts upward.
+      Demo__ThreadPoolMinThreads: "64"
+      ConnectionStrings__Default: "Server=sql;Database=SalesDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True"
+      Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__RabbitMq: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__SmtpHost: mailpit
+      Demo__SmtpPort: "1025"
+      Demo__TestingEnabled: "true"
+    ports: ["127.0.0.1:5411:8080"]
+    depends_on:
+      sql: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+      mailpit: { condition: service_started }
+  inventories:
+    build:
+      context: ../../..
+      dockerfile: agents/stress/docker/Dockerfile
+      args:
+        PROJECT_PATH: agents/stress/Inventories/src/Inventories.Api/Inventories.Api.csproj
+        APP_DLL: Inventories.Api.dll
+    environment:
+      ConnectionStrings__Demo: "Server=sql;Database=InventoriesDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True;Min Pool Size=16;Max Pool Size=300;Enlist=false"
+      Demo__SqlPoolWarmConnections: "64"
+      Demo__ThreadPoolMinThreads: "64"
+      ConnectionStrings__Default: "Server=sql;Database=InventoriesDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True"
+      Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__RabbitMq: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__SmtpHost: mailpit
+      Demo__SmtpPort: "1025"
+      Demo__TestingEnabled: "true"
+    ports: ["127.0.0.1:5412:8080"]
+    depends_on:
+      sql: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+      mailpit: { condition: service_started }
+  payments:
+    build:
+      context: ../../..
+      dockerfile: agents/stress/docker/Dockerfile
+      args:
+        PROJECT_PATH: agents/stress/Payments/src/Payments.Api/Payments.Api.csproj
+        APP_DLL: Payments.Api.dll
+    environment:
+      ConnectionStrings__Demo: "Server=sql;Database=PaymentsDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True;Min Pool Size=16;Max Pool Size=300;Enlist=false"
+      Demo__SqlPoolWarmConnections: "64"
+      Demo__ThreadPoolMinThreads: "64"
+      ConnectionStrings__Default: "Server=sql;Database=PaymentsDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True"
+      Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__RabbitMq: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__SmtpHost: mailpit
+      Demo__SmtpPort: "1025"
+      Demo__TestingEnabled: "true"
+    ports: ["127.0.0.1:5413:8080"]
+    depends_on:
+      sql: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+      mailpit: { condition: service_started }
+  email:
+    build:
+      context: ../../..
+      dockerfile: agents/stress/docker/Dockerfile
+      args:
+        PROJECT_PATH: agents/stress/Email/Email.Api.csproj
+        APP_DLL: Email.Api.dll
+    environment:
+      ConnectionStrings__Demo: "Server=sql;Database=EmailDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True;Min Pool Size=16;Max Pool Size=300;Enlist=false"
+      Demo__SqlPoolWarmConnections: "64"
+      Demo__ThreadPoolMinThreads: "64"
+      ConnectionStrings__Default: "Server=sql;Database=EmailDemo;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};TrustServerCertificate=True"
+      Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__RabbitMq: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__SmtpHost: mailpit
+      Demo__SmtpPort: "1025"
+      Demo__TestingEnabled: "true"
+    ports: ["127.0.0.1:5414:8080"]
+    depends_on:
+      sql: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+      mailpit: { condition: service_started }
+  runtime:
+    build:
+      context: ../../..
+      dockerfile: agents/stress/docker/Dockerfile
+      args:
+        PROJECT_PATH: agents/stress/Demo.RuntimeHost/Demo.RuntimeHost.csproj
+        APP_DLL: Demo.RuntimeHost.dll
+    environment:
+      # Keep orchestration state on its dedicated SQL Server. Prewarm the burst
+      # working set and leave enough headroom for larger tests without a pool gate.
+      ConnectionStrings__Demo: "Server=runtime-sql,1433;Database=KrackendRuntimeSqlServerV8;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};Encrypt=True;TrustServerCertificate=True;Pooling=True;Min Pool Size=64;Max Pool Size=1024;Connect Timeout=30;ConnectRetryCount=3;ConnectRetryInterval=1;Application Name=Krackend.Demo.Runtime"
+      ConnectionStrings__Default: "Server=runtime-sql,1433;Database=KrackendRuntimeSqlServerV8;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};Encrypt=True;TrustServerCertificate=True;Pooling=True;Min Pool Size=64;Max Pool Size=1024;Connect Timeout=30;ConnectRetryCount=3;ConnectRetryInterval=1;Application Name=Krackend.Demo.Runtime"
+      Demo__RuntimeProvider: "SqlServer"
+      Demo__SqlServerMemoryOptimizedExecutionState: "true"
+      Demo__SqlServerDurableLogFlushWindowMilliseconds: "4"
+      # Logical commits and dispatches remain concurrent. Keep a small bounded set of
+      # physical pumps; callers still coalesce instead of issuing one fsync each.
+      Demo__SqlServerDurableLogFlushConcurrency: "4"
+      # Hold the burst working set open before consumers start. Leaving only 64
+      # physical sessions warm made SqlClient grow the pool reactively while a
+      # 200-instance burst was already waiting inside SaveChanges.
+      Demo__RuntimePoolWarmConnections: "256"
+      # This remains a floor, not a concurrency ceiling. Let hill-climbing add
+      # workers instead of forcing a 256-thread SQL write stampede immediately.
+      Demo__ThreadPoolMinThreads: "64"
+      Demo__MuleKeyPrefix: "krackend:demo:runtime:sqlserver:v8"
+      ConnectionStrings__MuleRedis: "redis:6379,defaultDatabase=4"
+      Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__RabbitMq: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
+      Demo__SmtpHost: mailpit
+      Demo__SmtpPort: "1025"
+      Demo__TestingEnabled: "true"
+      Runtime__Replica__ReplicaId: "demo-runtime"
+      # Statistics are a derived read model. Keep its batch projector out of the
+      # latency lab so it cannot preempt functional saga commits every ten seconds.
+      Runtime__Statistics__Enabled: "false"
+    ports: ["127.0.0.1:5410:8080"]
+    depends_on:
+      runtime-sql: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mailpit: { condition: service_started }
+volumes:
+  demo-sql:
+  demo-runtime-sql:
+  demo-runtime-postgres:
+  demo-rabbit:
+  demo-redis:
+

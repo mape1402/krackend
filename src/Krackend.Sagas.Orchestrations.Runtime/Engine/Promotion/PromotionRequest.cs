@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
@@ -32,5 +33,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         /// Gets or sets the propagation metadata received with the trigger.
         /// </summary>
         public OrchestrationPropagationMetadata PropagationMetadata { get; set; }
+
+        /// <summary>
+        /// Gets the instance id reserved by the engine for the atomic start activation.
+        /// </summary>
+        internal Id? ProposedInstanceId { get; init; }
     }
 }

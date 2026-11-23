@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
@@ -7,28 +8,64 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Mule;
 using Mule.EntityFrameworkCore;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 
 public sealed class RuntimeDbContext : DbContext
 {
     private readonly RuntimeEntityFrameworkStorageOptions storageOptions;
+    private readonly RuntimeMutationLeaseScope _mutationLease;
+    private Guid? _guardedTransactionId;
+    private Id? _guardedInstanceId;
+    private string _guardedLeaseId;
+    private bool _guardedByTransactionLock;
+    private int _deferredDurableLogFlushCount;
 
-    internal Action<ModelBuilder> ModelCustomizationCacheKey => storageOptions.ConfigureModel;
+    internal object ModelCustomizationCacheKey
+        => (storageOptions.ConfigureModel, storageOptions.CompressSnapshotPayload);
+
+    internal bool IsDurableLogFlushDeferred => _deferredDurableLogFlushCount > 0;
+
+    internal IDisposable DeferDurableLogFlush()
+    {
+        _deferredDurableLogFlushCount++;
+        return new DurableLogFlushDeferral(this);
+    }
 
     public RuntimeDbContext(DbContextOptions<RuntimeDbContext> options)
-        : this(options, Options.Create(new RuntimeEntityFrameworkStorageOptions()))
+        : this(
+            options,
+            options.FindExtension<RuntimeDbContextOptionsExtension>()?.StorageOptions ??
+                new RuntimeEntityFrameworkStorageOptions(),
+            options.FindExtension<RuntimeDbContextOptionsExtension>()?.MutationLease)
     {
     }
 
-    public RuntimeDbContext(
+    private RuntimeDbContext(
         DbContextOptions<RuntimeDbContext> options,
-        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions)
+        RuntimeEntityFrameworkStorageOptions storageOptions,
+        RuntimeMutationLeaseScope mutationLease)
         : base(options)
     {
         ArgumentNullException.ThrowIfNull(storageOptions);
-        this.storageOptions = storageOptions.Value;
+        this.storageOptions = storageOptions;
+        _mutationLease = mutationLease;
+
+        // Every engine activation owns its transaction and performs one final
+        // SaveChanges. EF's nested automatic savepoint therefore cannot provide a
+        // partial rollback boundary, but it does add a command to every activation
+        // and makes the exact same transaction incompatible with SQL Server's
+        // durable memory-optimized tables. On failure the owning transaction is
+        // disposed and rolled back in full by RuntimeStorageUnitOfWork.
+        Database.AutoSavepointsEnabled = false;
     }
+
+    public static RuntimeDbContext Create(
+        DbContextOptions<RuntimeDbContext> options,
+        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions,
+        RuntimeMutationLeaseScope mutationLease = null)
+        => new(options, storageOptions?.Value ?? throw new ArgumentNullException(nameof(storageOptions)), mutationLease);
 
     public DbSet<RuntimeOrchestrationArtifact> RuntimeOrchestrationArtifacts => Set<RuntimeOrchestrationArtifact>();
 
@@ -71,6 +108,68 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<RuntimeDataProtectionKeyEntity> DataProtectionKeys => Set<RuntimeDataProtectionKeyEntity>();
 
+    internal void MarkMutationLeaseGuarded(
+        Id instanceId,
+        string leaseId,
+        bool guardedByTransactionLock = false)
+    {
+        var transactionId = Database.CurrentTransaction?.TransactionId;
+        if (!transactionId.HasValue) return;
+
+        _guardedTransactionId = transactionId;
+        _guardedInstanceId = instanceId;
+        _guardedLeaseId = leaseId;
+        _guardedByTransactionLock = guardedByTransactionLock;
+    }
+
+    internal bool IsGuardedByTransactionLock(Id instanceId, string leaseId)
+        => _guardedByTransactionLock &&
+            _guardedTransactionId == Database.CurrentTransaction?.TransactionId &&
+            _guardedInstanceId == instanceId &&
+            string.Equals(_guardedLeaseId, leaseId, StringComparison.Ordinal);
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction ownedTransaction = null;
+        try
+        {
+            if (_mutationLease?.Current is { } lease && Database.IsRelational())
+            {
+                if (Database.CurrentTransaction is null)
+                    ownedTransaction = await Database.BeginTransactionAsync(cancellationToken);
+                var transactionId = Database.CurrentTransaction?.TransactionId;
+                var alreadyGuarded = transactionId.HasValue &&
+                    _guardedTransactionId == transactionId &&
+                    _guardedInstanceId == lease.InstanceId &&
+                    string.Equals(_guardedLeaseId, lease.LeaseId, StringComparison.Ordinal);
+                if (!alreadyGuarded)
+                {
+                    // The conditional write locks this instance row until the activation
+                    // transaction commits. Once that row lock is held, repeating the same
+                    // guard before every decision save only adds SQL traffic; takeover cannot
+                    // succeed inside the transaction.
+                    var guarded = await OrchestrationInstances.Where(x => x.Id == lease.InstanceId &&
+                            x.ActiveLeaseId == lease.LeaseId && x.ActiveLeaseExpiresOnUtc > DateTime.UtcNow)
+                        .ExecuteUpdateAsync(update => update.SetProperty(x => x.ActiveLeaseId, lease.LeaseId), cancellationToken);
+                    if (guarded != 1) throw new RuntimeStateConflictException($"The mutation no longer owns the lease for '{lease.InstanceId}'.");
+                    _guardedTransactionId = transactionId;
+                    _guardedInstanceId = lease.InstanceId;
+                    _guardedLeaseId = lease.LeaseId;
+                }
+            }
+            var affected = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (ownedTransaction is not null) await ownedTransaction.CommitAsync(cancellationToken);
+            return affected;
+        }
+        catch (DbUpdateConcurrencyException exception) when (_mutationLease?.Current is not null || exception.Entries.Any(x => x.Entity is TaskDispatch))
+        {
+            ChangeTracker.Clear();
+            throw new RuntimeStateConflictException("Runtime state changed concurrently. Reload the action before continuing.", exception);
+        }
+        catch (RuntimeStateConflictException) { ChangeTracker.Clear(); throw; }
+        finally { if (ownedTransaction is not null) await ownedTransaction.DisposeAsync(); }
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("Runtime");
@@ -94,6 +193,9 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureRuntimeExtensionPackages(modelBuilder);
         ConfigureDataProtectionKeys(modelBuilder);
         modelBuilder.UseMuleModel();
+        // Runtime diagnostics and cancellation recovery resolve durable work by saga
+        // correlation. Keep those lookups independent of the accumulated action history.
+        modelBuilder.Entity<DurableAction>().HasIndex(x => x.CorrelationId);
         base.OnModelCreating(modelBuilder);
         storageOptions.ConfigureModel?.Invoke(modelBuilder);
     }
@@ -105,6 +207,18 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasKey(x => x.Id);
         builder.Property(x => x.FriendlyName).HasMaxLength(256);
         builder.Property(x => x.Xml).IsRequired();
+    }
+
+    private sealed class DurableLogFlushDeferral(RuntimeDbContext context) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            context._deferredDurableLogFlushCount--;
+            _disposed = true;
+        }
     }
 
     private static void ConfigureRuntimeDesignNodes(ModelBuilder modelBuilder)
@@ -201,10 +315,14 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => x.RuntimeOrchestrationArtifactId);
     }
 
-    private static void ConfigureInstances(ModelBuilder modelBuilder)
+    private void ConfigureInstances(ModelBuilder modelBuilder)
     {
         var builder = modelBuilder.Entity<OrchestrationInstance>();
         builder.ToTable("OrchestrationInstances");
+        // Leave room for PostgreSQL HOT tuples. One orchestration row is updated for
+        // every callback; packing pages to 100% turns those independent mutations into
+        // heap churn. Other providers safely ignore this provider annotation.
+        builder.HasAnnotation("Npgsql:StorageParameter:fillfactor", 30);
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
@@ -215,7 +333,11 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ExecutionKey).HasMaxLength(512).IsRequired();
-        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Status)
+            .UsePropertyAccessMode(PropertyAccessMode.Property)
+            .HasConversion<string>()
+            .HasMaxLength(64)
+            .IsRequired();
         builder.Property(x => x.StatisticsRevision).HasDefaultValue(0L).IsConcurrencyToken();
         builder.Property(x => x.CurrentStageKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CurrentTaskKey).HasMaxLength(256).IsRequired(false);
@@ -225,18 +347,49 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.FinalOutcome).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.ErrorSummary).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.ActiveLeaseId).HasMaxLength(256).IsRequired(false);
-        builder.Property(x => x.SnapshotPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
+        builder.Property(x => x.SnapshotPayload)
+            .HasConversion(storageOptions.CompressSnapshotPayload
+                ? new CompressedJsonNodeConverter()
+                : new JsonNodeConverter())
+            .IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
-        builder.HasIndex(x => x.LastUpdatedOnUtc);
         builder.HasIndex(x => x.StatisticsRevision);
-        builder.HasIndex(x => new { x.StartedOnUtc, x.Status });
-        builder.HasIndex(x => new { x.Status, x.ExpiresOnUtc, x.Id });
-        builder.HasIndex(x => new { x.Status, x.LastUpdatedOnUtc });
-          builder.HasIndex(x => new { x.Status, x.IdleExpiresOnUtc });
-        builder.HasIndex(x => new { x.DispatchCancellationPending, x.LastUpdatedOnUtc });
+        // Instance catalogs page and order by the immutable start timestamp while
+        // executions move through every status. The Running-only lifetime index
+        // below cannot serve that query once rows complete, which otherwise turns
+        // a live dashboard into repeated table scans competing with saga commits.
+        // StartedOnUtc never changes, so this index is maintained only on ingress.
+        builder.HasIndex(x => new { x.StartedOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_StartedOnUtc_Id");
+        builder.HasIndex(x => new { x.StartedOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_Running_StartedOnUtc_Id")
+            .HasFilter("[Status] = 'Running'");
+        builder.HasIndex(x => new { x.ExpiresOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_Running_ExpiresOnUtc_Id")
+            .HasFilter("[Status] = 'Running' AND [ExpiresOnUtc] IS NOT NULL");
+        builder.HasIndex(x => new { x.IdleExpiresOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id")
+            .HasFilter("[Status] = 'Idle' AND [IdleExpiresOnUtc] IS NOT NULL");
+        // LastUpdatedOnUtc changes on every state mutation. Indexing it globally (or
+        // behind Status) turns every independent saga into a delete + right-edge insert
+        // against the same B-tree page. Recent/catalog reads are intentionally allowed
+        // to sort their projection instead of imposing cross-saga write serialization.
+        // Cancellation recovery is exceptional work. Keeping every healthy instance
+        // (all sharing the leading value false) in this index turns LastUpdatedOnUtc
+        // into a right-edge latch convoy under normal callback traffic.
+        // LastUpdatedOnUtc changes on every callback. Even behind a partial predicate,
+        // PostgreSQL must treat that column as indexed and therefore cannot perform a
+        // HOT update for healthy instances. Cancellation candidates are exceptional
+        // and few; index only their stable identity and sort that tiny set in memory.
+        builder.HasIndex(x => x.Id)
+            .HasDatabaseName("IX_OrchestrationInstances_DispatchCancellationPending_Id")
+            .HasFilter("[DispatchCancellationPending] = 1");
         builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
-        builder.HasIndex(x => x.CorrelationId);
-        builder.HasIndex(x => x.SagaId);
+        builder.HasIndex(x => x.CorrelationId)
+            // Prefix correlation scans drive live status observation and load-test
+            // completion checks. PostgreSQL's default locale operator class cannot
+            // use a normal varchar index for LIKE 'prefix%'. Equality remains usable.
+            .HasAnnotation("Npgsql:IndexOperators", new[] { "varchar_pattern_ops" });
     }
 
     private static void ConfigureStatisticsObservations(ModelBuilder modelBuilder)
@@ -252,7 +405,12 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.StageKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.Processed).IsConcurrencyToken();
         builder.HasIndex(x => new { x.InstanceId, x.Revision }).IsUnique();
-        builder.HasIndex(x => new { x.Processed, x.InstanceId, x.Revision });
+        // Only unprocessed observations are recovery work. Retaining processed rows
+        // in this index makes every projection a second hot-tail insert and forces
+        // unrelated saga statistics to contend with normal engine commits.
+        builder.HasIndex(x => new { x.InstanceId, x.Revision })
+            .HasDatabaseName("IX_SagaStatisticsObservations_Pending_InstanceId_Revision")
+            .HasFilter("[Processed] = 0");
         builder.HasIndex(x => new { x.OrchestrationKey, x.OccurredOnUtc });
     }
 
@@ -334,10 +492,23 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.TimeoutActionLane).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => new { x.StageExecutionId, x.TaskKey }).IsUnique();
+        // Decision evaluation and recovery load the complete task graph by instance.
+        // Without this index every transition scans all historical task executions,
+        // making unrelated sagas slow each other down as the runtime grows.
+        builder.HasIndex(x => x.OrchestrationInstanceId);
         builder.HasIndex(x => x.CorrelationId);
-        builder.HasIndex(x => x.Status);
-        builder.HasIndex(x => new { x.Status, x.ResponseDeadlineUtc });
-        builder.HasIndex(x => new { x.Status, x.TimeoutActionId });
+        // Deadline recovery is driven by the task row. Keep the healthy write path to
+        // one timeout index and order it exactly like the scanner: the previous
+        // Status/CorrelationId/Deadline shape forced a scan and duplicated the same
+        // WaitingResponse churn on the attempt table.
+        builder.HasIndex(x => new { x.ResponseDeadlineUtc, x.Id })
+            .HasDatabaseName("IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id")
+            .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NOT NULL");
+        // Legacy rows created before deadlines were projected still need bounded
+        // recovery without making every normal awaited task maintain a second index.
+        builder.HasIndex(x => new { x.WaitingSinceUtc, x.Id })
+            .HasDatabaseName("IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id")
+            .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NULL");
     }
 
     private static void ConfigureAttempts(ModelBuilder modelBuilder)
@@ -356,7 +527,8 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => new { x.TaskExecutionId, x.AttemptNumber }).IsUnique();
         builder.HasIndex(x => x.DispatchId);
-        builder.HasIndex(x => x.Status);
+        // Timeout ownership lives on TaskExecution. Indexing the same transient status
+        // here doubled the insert/delete and latch cost of every successful callback.
     }
 
     private static void ConfigureDispatches(ModelBuilder modelBuilder)
@@ -374,11 +546,22 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.FailureReason).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.PhysicalCancellationPending).IsRequired();
+        builder.Property(x => x.CallbackReceiptId).HasMaxLength(64).IsRequired(false).IsConcurrencyToken();
+        builder.Property(x => x.CallbackAcceptedOnUtc).IsRequired(false);
+        builder.Property(x => x.PendingCallbackPayload).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.TaskExecutionAttemptId).IsUnique();
         builder.HasIndex(x => x.CommandId);
-        builder.HasIndex(x => x.DispatchStatus);
-        builder.HasIndex(x => x.PhysicalCancellationPending);
+        // QueuePending is the only status queried as a recovery set. The random
+        // storage prefix of Id spreads concurrent inserts; correlation ids often
+        // share a long run prefix and created a right-edge latch convoy.
+        builder.HasIndex(x => new { x.ScheduledOnUtc, x.Id })
+            .HasDatabaseName("IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc")
+            .HasFilter("[DispatchStatus] = 'QueuePending'");
+        builder.HasIndex(x => x.PhysicalCancellationPending)
+            .HasFilter("[PhysicalCancellationPending] = 1");
+        builder.HasIndex(x => new { x.CallbackPending, x.CallbackAcceptedOnUtc })
+            .HasFilter("[CallbackPending] = 1");
     }
 
     private static void ConfigureTransitions(ModelBuilder modelBuilder)
@@ -458,6 +641,9 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.MessageDisposition).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IngressTransport).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.SettingsPayload).IsRequired();
+        builder.Property(x => x.RouteTopic).HasMaxLength(512).IsRequired(false);
+        builder.Property(x => x.RouteVersion).HasMaxLength(64).IsRequired(false);
+        builder.HasIndex(x => new { x.RouteTopic, x.RouteVersion, x.IsActive });
         builder.HasIndex(x => new { x.RuntimeOrchestrationArtifactId, x.ConfigurationKey }).IsUnique();
         builder.HasIndex(x => new { x.IsActive, x.IngressTransport, x.IngressKind });
         builder.HasIndex(x => new { x.IsActive, x.RuntimeOrchestrationArtifactId });

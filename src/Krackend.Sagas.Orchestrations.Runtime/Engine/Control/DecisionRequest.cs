@@ -1,3 +1,4 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
@@ -32,5 +33,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         /// Gets the execution result metadata associated with a backchannel callback.
         /// </summary>
         public OrchestrationExecutionResultMetadata ExecutionResultMetadata { get; init; }
+
+        /// <summary>
+        /// Gets the newly promoted instance while it is still pending in this activation.
+        /// </summary>
+        internal OrchestrationInstance PreparedInstance { get; init; }
     }
 }

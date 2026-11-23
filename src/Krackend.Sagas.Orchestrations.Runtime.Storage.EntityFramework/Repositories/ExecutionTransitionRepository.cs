@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructu
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Runtime.Statistics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Globalization;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
@@ -14,21 +15,26 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
 {
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
+    private readonly bool _persistRoutineTransitions;
 
     public ExecutionTransitionRepository(
         RuntimeDbContext dbContext,
         IRuntimeStorageUnitOfWork unitOfWork,
-        IRuntimeReactiveEventPublisher reactiveEventPublisher)
+        IRuntimeReactiveEventPublisher reactiveEventPublisher,
+        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null)
         : base(dbContext, unitOfWork)
     {
         _reactiveEventPublisher = reactiveEventPublisher ?? throw new ArgumentNullException(nameof(reactiveEventPublisher));
         _unitOfWork = unitOfWork;
+        _persistRoutineTransitions = storageOptions?.Value.PersistRoutineExecutionTransitions ?? true;
     }
 
     public async Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default)
     {
-        DbContext.ExecutionTransitions.Add(transition);
         var isFailure = SagaFailureStatistics.IsFailure(transition.TransitionType);
+        var persistTransition = _persistRoutineTransitions || !IsRoutineSuccess(transition.TransitionType);
+        if (persistTransition)
+            DbContext.ExecutionTransitions.Add(transition);
         // The reactive publisher already needs this instance. Resolve it once and
         // reuse it to project failure scope without another lookup per event.
         var instance = isFailure ? await FindInstance(transition.OrchestrationInstanceId, cancellationToken) : null;
@@ -41,7 +47,8 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
                 OrchestrationVersion = string.IsNullOrWhiteSpace(instance?.OrchestrationVersion) ? null : instance.OrchestrationVersion.Trim(),
                 ScopeProjectionVersion = 1
             });
-        await SaveChanges(cancellationToken);
+        if (persistTransition || isFailure)
+            await SaveChanges(cancellationToken);
         var eventData = await BuildReactiveEvent(transition, cancellationToken, instance, isFailure);
         if (eventData is not null)
         {
@@ -51,6 +58,13 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
                 await _reactiveEventPublisher.Publish(eventData, cancellationToken);
         }
     }
+
+    private static bool IsRoutineSuccess(string transitionType)
+        => transitionType is
+            "InstancePromoted" or "InstanceStarted" or "InstanceCompleted" or
+            "StageStarted" or "StageCompleted" or
+            "TaskStarted" or "TaskDispatchEnqueued" or "TaskDispatched" or
+            "TaskCompleted" or "TaskCallbackCompleted";
 
     public async Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
         => await DbContext.ExecutionTransitions.AsNoTracking()

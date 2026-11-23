@@ -89,6 +89,25 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         Assert.Equal(0, repository.UpsertCount);
     }
 
+    [Fact]
+    public async Task DeployAsync_WhenSameDeliveryWithoutReleaseIdIsPending_DoesNotInsertDuplicateHistory()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var existing = repository.Add(CreateRuntimeArtifact("sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Pending, ingressGeneration: 4));
+        var package = CreatePackage(existing.OrchestrationDefinitionKey, existing.Version, existing.ArtifactChecksum.Value, existing.SourceOrchestrationVersionId);
+        package.ReleaseId = null;
+        existing.LastReleaseId = string.Empty;
+        existing.LastControlPlaneArtifactId = package.ArtifactId;
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal("Pending", result.Status);
+        Assert.Empty(scheduler.Requests);
+        Assert.Equal(0, repository.UpsertCount);
+    }
+
     [Theory]
     [InlineData("", "same")]
     [InlineData("other-release", "same")]

@@ -1,0 +1,30 @@
+[
+  {
+    "test": "independent_instances_control",
+    "completed": 20,
+    "acquisitionCalls": 20
+  },
+  {
+    "test": "twenty_contenders_one_busy_instance",
+    "rejected": 20,
+    "acquisitionCalls": 1261,
+    "elapsedMs": 2006
+  },
+  {
+    "test": "slow_dashboard_fanout_holds_lease",
+    "contenderAccepted": false,
+    "elapsedMs": 3346
+  },
+  {
+    "test": "lost_lease_reported_as_success",
+    "returnedSuccess": true,
+    "observedCancellation": true
+  },
+  {
+    "test": "mule_poison_terminal_blocks_healthy_completion",
+    "failures": 3,
+    "requeuedBatches": 3,
+    "committedHealthyCompletions": 0,
+    "remainingInBatch": 2
+  }
+]

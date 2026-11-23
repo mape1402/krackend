@@ -22,7 +22,7 @@ public sealed class DefaultOrchestrationPayloadContextFactory : IOrchestrationPa
     {
         ArgumentNullException.ThrowIfNull(instance);
 
-        var context = instance.SnapshotPayload?.DeepClone();
+        var context = OrchestrationPayloadReferences.Expand(instance.SnapshotPayload);
         return new OrchestrationPayloadContext
         {
             ContextPayload = context,

@@ -109,7 +109,7 @@ public sealed class MessagingTaskRuntimeAdapterTests
         Assert.Equal("backchannel-settings", command.ReplyAddress.SettingsPayload);
         Assert.Equal("commands.sales.undo", captured!.Topic);
         Assert.Equal("1.0.0", captured.Version);
-        Assert.Equal("""{"undo":true}""", captured.Payload);
+        Assert.Null(captured.Payload);
         Assert.Equal(RemoteCommandTransport.Messaging, compensation.Transport);
         Assert.Equal("backchannel-settings", compensation.ReplyAddress!.SettingsPayload);
     }
@@ -160,6 +160,50 @@ public sealed class MessagingTaskRuntimeAdapterTests
         }));
         Assert.Throws<ArgumentNullException>(() => new MessagingTaskRuntimeAdapter(null!, accessor));
         Assert.Throws<ArgumentNullException>(() => new MessagingTaskRuntimeAdapter(serializer, null!));
+    }
+
+    [Fact]
+    public async Task BuildCommandSharesBackchannelLookupUntilArtifactInvalidation()
+    {
+        var serializer = Substitute.For<IMessagingCommandSerializer>();
+        serializer.Serialize(Arg.Any<MessagingCommand>()).Returns("serialized-command");
+        var accessor = Substitute.For<IGetIngressConfigurationByArtifactAccessor>();
+        accessor.GetConfigurationAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<IngressConfiguration>>
+            ([
+                new()
+                {
+                    Id = "backchannel",
+                    ArtifactId = "artifact",
+                    IngressKind = IngressKind.Backchannel,
+                    IngressTransport = IngressTransport.Messaging,
+                    SettingsPayload = "backchannel-settings"
+                }
+            ]));
+        var cache = new RuntimeBackchannelReplyAddressCache();
+        var adapter = new MessagingTaskRuntimeAdapter(serializer, accessor, cache);
+        var instance = Instance();
+        var request = new TaskRuntimeCommandRequest
+        {
+            Instance = instance,
+            StageExecutionId = Id.New(),
+            StageKey = "stage-one",
+            Task = MessagingTask(),
+            TaskExecution = TaskExecution(),
+            Attempt = new TaskExecutionAttempt { Id = Id.New() },
+            Dispatch = Dispatch(),
+            Payload = "{}"
+        };
+
+        await Task.WhenAll(adapter.BuildCommandAsync(request), adapter.BuildCommandAsync(request));
+        await accessor.Received(1).GetConfigurationAsync(
+            instance.RuntimeOrchestrationArtifactId.ToString(), Arg.Any<CancellationToken>());
+
+        cache.Invalidate(instance.RuntimeOrchestrationArtifactId);
+        await adapter.BuildCommandAsync(request);
+
+        await accessor.Received(2).GetConfigurationAsync(
+            instance.RuntimeOrchestrationArtifactId.ToString(), Arg.Any<CancellationToken>());
     }
 
     private static void AssertFailure(RuntimeArtifactCompatibilityValidationResult result, string expectedCode)

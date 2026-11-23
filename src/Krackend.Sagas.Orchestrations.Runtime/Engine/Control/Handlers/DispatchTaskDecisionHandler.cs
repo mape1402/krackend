@@ -41,9 +41,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
-            var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var instance = decision.Instance ?? await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             if (IsTerminal(instance.Status) ||
-                await TaskAlreadyExistsAsync(decision.StageExecutionId, decision.Task.Key, cancellationToken))
+                (decision.Instance is null && await TaskAlreadyExistsAsync(decision.StageExecutionId, decision.Task.Key, cancellationToken)))
             {
                 return;
             }
@@ -66,30 +66,34 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             if (!condition.Succeeded)
             {
                 await MarkConditionFailedAsync(decision, instance, condition, now, cancellationToken);
+                decision.State?.InvalidateTasks(decision.StageExecutionId);
                 return;
             }
 
             if (!condition.ShouldExecute)
             {
                 await SkipTaskAsync(decision, instance, now, cancellationToken);
+                decision.State?.InvalidateTasks(decision.StageExecutionId);
                 return;
             }
 
-            await _taskAttemptDispatcher.DispatchAsync(
-                new TaskAttemptDispatchRequest
-                {
-                    Kind = TaskAttemptDispatchKind.Initial,
-                    Instance = instance,
-                    StageExecutionId = decision.StageExecutionId,
-                    StageKey = decision.StageKey,
-                    Task = decision.Task,
-                    OrchestrationExecutionPolicy = decision.OrchestrationExecutionPolicy,
-                    StageExecutionPolicy = decision.StageExecutionPolicy,
-                    Payload = decision.Payload,
-                    MetadataDescriptors = decision.MetadataDescriptors,
-                    NowUtc = now
-                },
-                cancellationToken);
+            var dispatchRequest = new TaskAttemptDispatchRequest
+            {
+                Kind = TaskAttemptDispatchKind.Initial,
+                Instance = instance,
+                StageExecutionId = decision.StageExecutionId,
+                StageKey = decision.StageKey,
+                Task = decision.Task,
+                OrchestrationExecutionPolicy = decision.OrchestrationExecutionPolicy,
+                StageExecutionPolicy = decision.StageExecutionPolicy,
+                Payload = decision.Payload,
+                MetadataDescriptors = decision.MetadataDescriptors,
+                NowUtc = now,
+                State = decision.State
+            };
+            await _taskAttemptDispatcher.DispatchAsync(dispatchRequest, cancellationToken);
+            if (!dispatchRequest.StateUpdated)
+                decision.State?.InvalidateTasks(decision.StageExecutionId);
         }
 
         private async Task MarkConditionFailedAsync(
@@ -101,7 +105,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var taskExecution = new TaskExecution
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = decision.InstanceId,
                 StageExecutionId = decision.StageExecutionId,
                 TaskKey = decision.Task.Key,
@@ -117,7 +121,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 StartedOnUtc = now,
                 FailedOnUtc = now,
                 LastAttemptNumber = 0,
-                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.NewDistributed().ToString() : instance.CorrelationId
             };
 
             taskExecution.Metadata["ConditionErrorCode"] = JsonValue.Create(condition.ErrorCode);
@@ -139,7 +143,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _instanceRepository.Update(instance, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = decision.StageExecutionId,
                     TaskExecutionId = taskExecution.Id,
@@ -162,7 +166,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.RecordCompletedTasks(1);
             var taskExecution = new TaskExecution
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = decision.InstanceId,
                 StageExecutionId = decision.StageExecutionId,
                 TaskKey = decision.Task.Key,
@@ -178,7 +182,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 StartedOnUtc = now,
                 CompletedOnUtc = now,
                 LastAttemptNumber = 0,
-                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.NewDistributed().ToString() : instance.CorrelationId
             };
 
             instance.Status = OrchestrationInstanceStatus.Running;
@@ -195,7 +199,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _instanceRepository.Update(instance, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = decision.StageExecutionId,
                     TaskExecutionId = taskExecution.Id,

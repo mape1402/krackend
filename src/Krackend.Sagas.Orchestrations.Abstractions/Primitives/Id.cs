@@ -11,6 +11,16 @@ public readonly record struct Id(Ulid Value) : IComparable<Id>, IComparable
     public static Id New() => new(Ulid.NewUlid());
 
     /// <summary>
+    /// Creates an identifier suitable for distributed runtime writes.
+    /// </summary>
+    /// <remarks>
+    /// ULID's timestamp-leading representation keeps concurrent inserts in the hot end
+    /// of the index. Randomizing a storage-leading byte creates hundreds of unrelated
+    /// insertion points, destroys page locality, and causes sustained fragmentation.
+    /// </remarks>
+    public static Id NewDistributed() => new(Ulid.NewUlid());
+
+    /// <summary>
     /// Compares this identifier with another identifier.
     /// </summary>
     /// <param name="other">Identifier to compare against.</param>

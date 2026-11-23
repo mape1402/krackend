@@ -18,6 +18,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
     private readonly IOrchestrationDispatchRecoveryCoordinator _dispatchRecoveryCoordinator;
     private readonly IOrchestrationCompensationRecoveryCoordinator _compensationRecoveryCoordinator;
     private readonly RuntimeReconciliationOptions _options;
+    private readonly IOrchestrationCallbackRecovery _callbackRecovery;
 
     public DefaultOrchestrationRuntimeReconciler(
         IRuntimeAdmissionController admissionController,
@@ -28,12 +29,14 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null,
         IOrchestrationCompensationRecoveryCoordinator compensationRecoveryCoordinator = null,
         IOrchestrationDispatchCancellationRecoveryCoordinator dispatchCancellationRecoveryCoordinator = null,
-        ITaskResponseTimeoutScheduler timeoutScheduler = null)
+        ITaskResponseTimeoutScheduler timeoutScheduler = null,
+        IOrchestrationCallbackRecovery callbackRecovery = null)
     {
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         ArgumentNullException.ThrowIfNull(instanceRepository);
         _timeoutProcessor = timeoutProcessor ?? throw new ArgumentNullException(nameof(timeoutProcessor));
         _timeoutScheduler = timeoutScheduler ?? new NoopTaskResponseTimeoutScheduler();
+        _callbackRecovery = callbackRecovery;
         _dispatchRecoveryCoordinator = dispatchRecoveryCoordinator;
         _compensationRecoveryCoordinator = compensationRecoveryCoordinator;
         _dispatchCancellationRecoveryCoordinator = dispatchCancellationRecoveryCoordinator;
@@ -51,6 +54,8 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         }
 
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, cancellationToken);
+        var recoveredCallbacks = _callbackRecovery is null ? 0
+            : await _callbackRecovery.RecoverAsync(Math.Max(1, _options.BatchSize), cancellationToken);
 
         var reconciledCancellations = _dispatchCancellationRecoveryCoordinator is null
             ? 0
@@ -78,7 +83,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             false,
             DeliveriesRecovered: recoveredDispatches,
             CompensationsRecovered: recoveredCompensations,
-            DispatchCancellationsReconciled: reconciledCancellations);
+            DispatchCancellationsReconciled: reconciledCancellations) { CallbacksRecovered = recoveredCallbacks };
     }
 
 }

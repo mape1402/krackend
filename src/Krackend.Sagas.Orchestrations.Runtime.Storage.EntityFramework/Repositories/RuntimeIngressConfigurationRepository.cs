@@ -19,6 +19,7 @@ internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryB
         CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+        foreach (var configuration in configurations) configuration.ProjectMessagingRoute();
         var currentConfigurations = await DbContext.RuntimeIngressConfigurations
             .Where(x => x.RuntimeOrchestrationArtifactId == runtimeOrchestrationArtifactId)
             .ToArrayAsync(cancellationToken);
@@ -38,6 +39,8 @@ internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryB
             current.MessageDisposition = next.MessageDisposition;
             current.IngressTransport = next.IngressTransport;
             current.SettingsPayload = next.SettingsPayload;
+            current.RouteTopic = next.RouteTopic;
+            current.RouteVersion = next.RouteVersion;
             current.IsActive = true;
             current.UpdatedOnUtc = next.UpdatedOnUtc;
             current.DeactivatedOnUtc = null;

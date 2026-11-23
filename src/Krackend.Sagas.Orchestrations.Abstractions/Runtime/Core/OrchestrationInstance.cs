@@ -8,6 +8,10 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 /// </summary>
 public sealed class OrchestrationInstance
 {
+    private OrchestrationInstanceStatus _status;
+    private OrchestrationInstanceStatus _statisticsObservedStatus;
+    private bool _statusInitialized;
+
     /// <summary>
     /// Gets or sets id.
     /// </summary>
@@ -78,7 +82,31 @@ public sealed class OrchestrationInstance
     /// <summary>
     /// Gets or sets status.
     /// </summary>
-    public OrchestrationInstanceStatus Status { get; set; }
+    public OrchestrationInstanceStatus Status
+    {
+        get => _status;
+        set
+        {
+            if (!_statusInitialized)
+            {
+                _statisticsObservedStatus = value;
+                _statusInitialized = true;
+            }
+
+            _status = value;
+        }
+    }
+
+    /// <summary>Returns true when the aggregate status changed since its last statistics observation.</summary>
+    public bool HasUnobservedStatisticsStatusChange()
+        => _statusInitialized && _status != _statisticsObservedStatus;
+
+    /// <summary>Marks the current aggregate status as represented by a statistics observation.</summary>
+    public void MarkStatisticsStatusObserved()
+    {
+        _statisticsObservedStatus = _status;
+        _statusInitialized = true;
+    }
 
     /// <summary>
     /// Gets or sets current stage key.

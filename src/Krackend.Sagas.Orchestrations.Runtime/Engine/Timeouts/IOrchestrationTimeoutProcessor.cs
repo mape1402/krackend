@@ -25,6 +25,18 @@ public interface IOrchestrationTimeoutProcessor
         CancellationToken cancellationToken = default)
         => Task.FromResult(TaskResponseTimeoutProcessingResult.Ignored);
 
+    /// <summary>
+    /// Applies one scheduled timeout when the durable action already carries the
+    /// owning instance id. Implementations can use it to arbitrate the instance before
+    /// touching storage, avoiding a database wait when that same saga is being mutated.
+    /// </summary>
+    Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id orchestrationInstanceId,
+        Id taskExecutionId,
+        DateTime utcNow,
+        CancellationToken cancellationToken = default)
+        => ProcessTaskTimeoutAsync(taskExecutionId, utcNow, cancellationToken);
+
 }
 
 /// <summary>Optional capability for sharing artifact lookups within a timeout repair pass.</summary>

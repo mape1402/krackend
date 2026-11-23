@@ -15,6 +15,9 @@ public sealed record RuntimeReconciliationResult(
     int CompensationsRecovered = 0,
     int DispatchCancellationsReconciled = 0)
 {
+    /// <summary>Gets the number of accepted callbacks handed back to durable execution.</summary>
+    public int CallbacksRecovered { get; init; }
+
     /// <summary>Preserves the original reconciliation result constructor.</summary>
     public RuntimeReconciliationResult(
         int InstancesObserved,

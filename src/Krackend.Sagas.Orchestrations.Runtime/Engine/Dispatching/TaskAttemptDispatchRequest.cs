@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 
 internal sealed class TaskAttemptDispatchRequest
 {
@@ -30,4 +31,8 @@ internal sealed class TaskAttemptDispatchRequest
     public DateTime NowUtc { get; init; }
 
     public DateTimeOffset? ScheduledOnUtc { get; init; }
+
+    public OrchestrationDecisionState State { get; init; }
+
+    public bool StateUpdated { get; set; }
 }

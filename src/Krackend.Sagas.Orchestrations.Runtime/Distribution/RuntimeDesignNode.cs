@@ -11,7 +11,7 @@ public sealed class RuntimeDesignNode
     /// <summary>
     /// Gets or sets the runtime-local design node identifier.
     /// </summary>
-    public Id Id { get; set; } = Id.New();
+    public Id Id { get; set; } = Id.NewDistributed();
 
     /// <summary>
     /// Gets or sets the runtime-local key used to identify this design node.

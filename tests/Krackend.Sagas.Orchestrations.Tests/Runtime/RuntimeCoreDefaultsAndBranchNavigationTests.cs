@@ -516,7 +516,7 @@ public sealed class RuntimeCoreDefaultsAndBranchNavigationTests
         Assert.Equal("builtin", execution.Metadata["ResolvedExecutionProvider"]!.GetValue<string>());
         Assert.Equal("local", execution.Metadata["ResolvedExecutionMode"]!.GetValue<string>());
         Assert.NotNull(attempt.Metadata["ResolvedExecutionPolicy"]);
-        Assert.NotNull(dispatch.Metadata["ResolvedExecutionPolicy"]);
+        Assert.False(dispatch.Metadata.ContainsKey("ResolvedExecutionPolicy"));
 
         static TaskAttemptDispatchRequest WithTask(TaskAttemptDispatchRequest request, TaskArtifact task)
             => new()

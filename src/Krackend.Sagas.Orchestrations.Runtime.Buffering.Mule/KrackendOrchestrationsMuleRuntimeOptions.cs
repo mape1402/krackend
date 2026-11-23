@@ -15,6 +15,12 @@ public sealed class KrackendOrchestrationsMuleRuntimeOptions
     /// <summary>Gets or sets the total concurrently executing runtime actions shared by all runtime-owned lanes.</summary>
     public int? TotalMaxDegreeOfParallelism { get; set; }
 
+    /// <summary>
+    /// Gets or sets the fallback scan interval used only to recover durable work whose immediate activation was lost.
+    /// Healthy actions are activated directly and do not wait for this interval.
+    /// </summary>
+    public TimeSpan RecoveryPollingInterval { get; set; } = TimeSpan.FromSeconds(30);
+
     /// <summary>Gets the lane settings for trigger intake and orchestration start actions.</summary>
     public KrackendOrchestrationsMuleLaneOptions Trigger { get; } = new();
 
@@ -85,6 +91,9 @@ public sealed class KrackendOrchestrationsMuleLaneOptions
 
     /// <summary>Gets or sets maximum already claimed actions that may execute concurrently.</summary>
     public int? MaxDegreeOfParallelism { get; set; }
+
+    /// <summary>Gets or sets this lane's fallback recovery scan interval.</summary>
+    public TimeSpan? RecoveryPollingInterval { get; set; }
 
     /// <summary>Gets or sets actions claimed in one durable-storage read.</summary>
     public int? DispatchBatchSize { get; set; }

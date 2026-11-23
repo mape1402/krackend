@@ -1,5 +1,7 @@
 using Serilog;
 
+using Krackend.Demo;
+
 try
 {
     var builder = WebApplication.CreateBuilder(args);
@@ -24,7 +26,10 @@ try
 
     builder.Services.AddDefaults(builder.Configuration, builder.Environment);
 
+    builder.Services.AddDemoApi(builder.Configuration, "sales");
     var app = builder.Build();
+    await app.InitializeDemoAsync();
+    app.MapDemoEndpoints("sales");
 
     app.UseDefaults(app.Environment);
 

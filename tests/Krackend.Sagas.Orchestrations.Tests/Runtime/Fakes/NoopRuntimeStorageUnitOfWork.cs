@@ -4,6 +4,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 internal sealed class NoopRuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
 {
+    public bool PreferBatchedEngineActivations => false;
+
     public bool AutoSaveChanges => true;
 
     public Task<IRuntimeStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)

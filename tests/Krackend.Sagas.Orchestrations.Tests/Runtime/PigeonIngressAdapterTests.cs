@@ -4,7 +4,9 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -22,6 +24,45 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class PigeonIngressAdapterTests
 {
+    [Fact]
+    public void RuntimeRegistrationUsesDirectUnlimitedParallelConsumerDispatchByDefault()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsRuntime().AddPigeon(
+            CreatePigeonConfiguration(),
+            pigeon => pigeon.ConfigureConsumerExecution(execution =>
+                execution.AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess));
+
+        using var provider = services.BuildServiceProvider();
+        var execution = provider.GetRequiredService<IOptions<GlobalSettings>>().Value.ConsumerExecution;
+        var manager = provider.GetRequiredService<IConsumingManager>();
+
+        Assert.Null(execution.MaxConcurrency);
+        Assert.Null(execution.QueueCapacity);
+        Assert.Null(execution.PrefetchCount);
+        Assert.Equal("DirectParallelConsumingManager", manager.GetType().Name);
+    }
+
+    [Fact]
+    public void RuntimeRegistrationPreservesExplicitConsumerCapacity()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsRuntime().AddPigeon(
+            CreatePigeonConfiguration(),
+            pigeon => pigeon.ConfigureConsumerExecution(execution => execution.QueueCapacity = 321));
+
+        using var provider = services.BuildServiceProvider();
+        var execution = provider.GetRequiredService<IOptions<GlobalSettings>>().Value.ConsumerExecution;
+
+        Assert.Equal(321, execution.QueueCapacity);
+    }
+
+    private static IConfiguration CreatePigeonConfiguration()
+        => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Pigeon:Domain"] = "Krackend.Runtime.Tests"
+        }).Build();
+
     [Fact]
     public async Task StagedConnectorCanRegisterWithoutPigeonReadiness()
     {

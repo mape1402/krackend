@@ -458,6 +458,29 @@ public sealed class CompleteCallbackDecisionHandlerTests
             failedCallback.Attempt,
             failedCallback.Dispatch,
             false));
+
+        var durableEarlyCallback = CallbackState(
+            taskStatus: TaskExecutionStatus.Running,
+            attemptStatus: TaskExecutionStatus.Running,
+            dispatchStatus: "Enqueued");
+        durableEarlyCallback.Dispatch.CallbackReceiptId = "receipt-early";
+        durableEarlyCallback.Dispatch.CallbackPending = true;
+        Assert.True(InvokePrivate<bool>(
+            "CanApplyCallback",
+            durableEarlyCallback.Instance,
+            durableEarlyCallback.Task,
+            durableEarlyCallback.Attempt,
+            durableEarlyCallback.Dispatch,
+            true));
+
+        durableEarlyCallback.Dispatch.CallbackPending = false;
+        Assert.False(InvokePrivate<bool>(
+            "CanApplyCallback",
+            durableEarlyCallback.Instance,
+            durableEarlyCallback.Task,
+            durableEarlyCallback.Attempt,
+            durableEarlyCallback.Dispatch,
+            true));
     }
 
     [Fact]

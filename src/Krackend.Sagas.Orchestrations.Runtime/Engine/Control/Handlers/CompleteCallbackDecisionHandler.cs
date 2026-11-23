@@ -5,10 +5,12 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -26,6 +28,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationValidationExecutor _validationExecutor;
         private readonly IRuntimeStateTransaction _stateTransaction;
         private readonly ITaskResponseTimeoutScheduler? _timeoutScheduler;
+        private readonly IOrchestrationInstanceCoordinator? _coordinator;
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -38,7 +41,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IRuntimeArtifactResolver artifactResolver,
             IOrchestrationValidationExecutor validationExecutor,
             IRuntimeStateTransaction stateTransaction = null,
-            ITaskResponseTimeoutScheduler? timeoutScheduler = null)
+            ITaskResponseTimeoutScheduler? timeoutScheduler = null,
+            IOrchestrationInstanceCoordinator? coordinator = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -51,21 +55,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _validationExecutor = validationExecutor ?? throw new ArgumentNullException(nameof(validationExecutor));
             _stateTransaction = stateTransaction;
             _timeoutScheduler = timeoutScheduler;
+            _coordinator = coordinator;
         }
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
         {
             if (decision.ResumeOnly)
             {
+                await CompleteReceiptAsync(decision.Dispatch, cancellationToken);
                 return;
             }
 
             var now = DateTime.UtcNow;
-            var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            var task = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
-            var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
-            var dispatch = await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
-            var attempt = await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
+            var instance = decision.Instance ?? await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var task = decision.TaskExecution ?? await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
+            var stage = decision.StageExecution ??
+                await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
+            var dispatch = decision.Dispatch ?? await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
+            var attempt = decision.Attempt ?? await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
             var result = decision.ExecutionResultMetadata ?? BuildMissingExecutionResultMetadata();
             var responsePayload = ResolveResponsePayload(decision.Payload, result);
             result = await ApplyResponseValidationAsync(instance, stage, task, result, responsePayload, cancellationToken);
@@ -86,6 +93,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var keepDeadLettered = instance.Status == OrchestrationInstanceStatus.DeadLettered;
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
+            // Prepared direct delivery does not write an independent publication
+            // confirmation. Receipt of the callback is stronger evidence that the
+            // command was published, and folding it here keeps the healthy path to one
+            // functional commit per callback.
+            dispatch.SentOnUtc ??= dispatch.CallbackAcceptedOnUtc ?? now;
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
             dispatch.FailedOnUtc = succeeded ? null : now;
             dispatch.FailureReason = succeeded ? null : errorMessage;
@@ -135,9 +147,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _attemptRepository.Update(attempt, token);
                 await _taskRepository.Update(task, token);
                 await _instanceRepository.Update(instance, token);
+                // The receipt was persisted independently before engine entry. Clear
+                // its recovery marker in this same state transaction so processing a
+                // healthy callback costs one commit rather than a state commit plus a
+                // second housekeeping commit.
+                if (_dispatchRepository is ITaskDispatchCallbackReceiptRepository receipts &&
+                    !string.IsNullOrWhiteSpace(dispatch.CallbackReceiptId))
+                    await receipts.CompleteCallback(dispatch.Id, dispatch.CallbackReceiptId, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = task.StageExecutionId,
                     TaskExecutionId = task.Id,
@@ -156,9 +175,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 }, token);
             }, cancellationToken);
 
-            if (_timeoutScheduler is not null)
+            if (_timeoutScheduler?.UsesDurableScheduling == true)
             {
-                await _timeoutScheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+                var timeoutCancellation = new TaskResponseTimeoutCancellationRequest
                 {
                     OrchestrationInstanceId = instance.Id,
                     TaskExecutionId = task.Id,
@@ -167,8 +186,39 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     TaskExecutionAttemptId = timeoutAttemptId,
                     AttemptNumber = timeoutAttemptNumber,
                     DueOnUtc = timeoutDueOnUtc
-                }, cancellationToken);
+                };
+
+                if (_coordinator is IOrchestrationPostLeaseWork postLeaseWork)
+                {
+                    // Cancellation is durable housekeeping. Running it from another
+                    // DbContext before this activation commits can make the saga wait
+                    // on its own instance-row lock. Fan it out only after lease release.
+                    await postLeaseWork.ExecuteIsolatedAfterLeaseReleaseAsync(
+                        instance.Id,
+                        async (services, token) =>
+                        {
+                            var scheduler = services.GetService<ITaskResponseTimeoutScheduler>();
+                            if (scheduler is not null)
+                                await scheduler.CancelAsync(timeoutCancellation, token);
+                        },
+                        cancellationToken);
+                }
+                else
+                {
+                    await _timeoutScheduler.CancelAsync(timeoutCancellation, cancellationToken);
+                }
             }
+        }
+
+        private async Task CompleteReceiptAsync(TaskDispatch dispatch, CancellationToken cancellationToken)
+        {
+            if (dispatch is null || string.IsNullOrWhiteSpace(dispatch.CallbackReceiptId) ||
+                _dispatchRepository is not ITaskDispatchCallbackReceiptRepository receipts)
+                return;
+
+            await PersistStateAsync(
+                token => receipts.CompleteCallback(dispatch.Id, dispatch.CallbackReceiptId, token),
+                cancellationToken);
         }
 
         private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
@@ -205,6 +255,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             if (cancelledParallelResult) return true;
 
+            if (dispatch.CallbackPending &&
+                !string.IsNullOrWhiteSpace(dispatch.CallbackReceiptId) &&
+                IsPublicationCandidate(task.Status, attempt.Status) &&
+                IsDispatchAwaitingPublicationConfirmation(dispatch.DispatchStatus))
+            {
+                // A callback that already owns an atomic receipt is stronger proof of
+                // publication than the housekeeping confirmation that follows it. Apply
+                // the result directly; the publishing action will observe the terminal
+                // dispatch and suppress its stale confirmation.
+                return true;
+            }
+
             if (task.Status == TaskExecutionStatus.WaitingResponse &&
                 attempt.Status == TaskExecutionStatus.WaitingResponse &&
                 string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
@@ -234,11 +296,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 or OrchestrationInstanceStatus.Compensated
                 or OrchestrationInstanceStatus.Aborted;
 
+        private static bool IsPublicationCandidate(
+            TaskExecutionStatus taskStatus,
+            TaskExecutionStatus attemptStatus)
+            => taskStatus == TaskExecutionStatus.Running && attemptStatus == TaskExecutionStatus.Running ||
+               taskStatus == TaskExecutionStatus.WaitingResponse && attemptStatus == TaskExecutionStatus.WaitingResponse;
+
         private static bool IsFinishedDispatch(string status)
             => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsDispatchAwaitingPublicationConfirmation(string status)
+            => string.Equals(status, "QueuePending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "RetryPending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "ReplayPending", StringComparison.OrdinalIgnoreCase);
 
         private static JsonNode ResolveResponsePayload(
             string payload,

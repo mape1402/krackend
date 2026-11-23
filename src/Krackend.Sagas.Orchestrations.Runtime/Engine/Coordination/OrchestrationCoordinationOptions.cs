@@ -11,6 +11,14 @@ public sealed class OrchestrationCoordinationOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets whether coordination also acquires a database-backed lease.
+    /// Keep enabled for multiple runtime replicas. A single-replica host can disable
+    /// it while retaining the per-instance in-process gate, avoiding two redundant
+    /// instance-row updates around every functional mutation.
+    /// </summary>
+    public bool DistributedLeaseEnabled { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the lease duration, in seconds, for one orchestration instance mutation scope.
     /// </summary>
     public int LeaseDurationSeconds { get; set; } = 30;

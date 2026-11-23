@@ -86,8 +86,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 .OrderByDescending(x => x.CompletedOnUtc)
                 .ToArray();
             var resolvedArtifact = await _artifactResolver.ResolveAsync(decision.ArtifactId, cancellationToken);
-            var taskArtifacts = resolvedArtifact.Artifact.StageDefinitions
-                .SelectMany(x => x.TaskDefinitions)
+            var stageArtifacts = resolvedArtifact.Artifact.StageDefinitions
                 .ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
 
             if (instance.Status != OrchestrationInstanceStatus.Compensating)
@@ -111,17 +110,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             foreach (var task in completedTasks)
             {
-                if (!taskArtifacts.TryGetValue(task.TaskKey, out var taskArtifact))
-                {
-                    continue;
-                }
-
-                if (taskArtifact.Compensation is null || taskArtifact.Compensation.Configuration is null)
-                {
-                    continue;
-                }
-
                 var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
+                if (!stageArtifacts.TryGetValue(stage.StageKey, out var stageArtifact))
+                {
+                    continue;
+                }
+
+                var taskArtifact = stageArtifact.TaskDefinitions.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Key, task.TaskKey, StringComparison.OrdinalIgnoreCase));
+
+                if (taskArtifact?.Compensation is null || taskArtifact.Compensation.Configuration is null)
+                {
+                    continue;
+                }
+
                 var dispatched = await ExecuteCompensationAsync(
                     instance,
                     resolvedArtifact,
@@ -181,7 +183,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 TransitionType = "InstanceCompensated",
                 FromStatus = OrchestrationInstanceStatus.Compensating.ToString(),
@@ -260,7 +262,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 cancellationToken);
             var compensation = new CompensationExecution
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 SourceTaskExecutionId = sourceTaskExecutionId,
                 CompensationTaskKey = compensationTaskKey,
@@ -379,7 +381,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     await _compensationRepository.Update(compensation, token);
                     await _transitionRepository.Create(new ExecutionTransition
                     {
-                        Id = Id.New(),
+                        Id = Id.NewDistributed(),
                         OrchestrationInstanceId = instance.Id,
                         StageExecutionId = stageExecutionId,
                         TaskExecutionId = sourceTaskExecutionId,
@@ -427,7 +429,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _compensationRepository.Update(compensation, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,
@@ -584,7 +586,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,
@@ -615,7 +617,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _compensationRepository.Update(compensation, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,
@@ -665,7 +667,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,
@@ -715,7 +717,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,
@@ -746,7 +748,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 await _compensationRepository.Update(compensation, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
-                    Id = Id.New(),
+                    Id = Id.NewDistributed(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stageExecutionId,
                     TaskExecutionId = sourceTaskExecutionId,

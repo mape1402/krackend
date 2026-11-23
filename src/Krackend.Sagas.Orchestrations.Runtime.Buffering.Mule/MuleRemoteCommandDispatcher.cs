@@ -11,12 +11,13 @@ using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
-    internal sealed class MuleRemoteCommandDispatcher : IRemoteCommandDispatcher
+    internal sealed class MuleRemoteCommandDispatcher : IDurableRemoteCommandDispatcher
     {
         private readonly IMuleClient _muleClient;
         private readonly IMuleStorage _muleStorage;
         private readonly IMuleSerializer _muleSerializer;
         private readonly IMuleCommitNotifier _commitNotifier;
+        private readonly IServiceProvider _serviceProvider;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MuleRemoteCommandDispatcher> _logger;
         private readonly ITaskDispatchRepository? _dispatchRepository;
@@ -28,6 +29,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IMuleStorage muleStorage,
             IMuleSerializer muleSerializer,
             IMuleCommitNotifier commitNotifier,
+            IServiceProvider serviceProvider,
             IServiceScopeFactory scopeFactory,
             ILogger<MuleRemoteCommandDispatcher> logger,
             ITaskDispatchRepository? dispatchRepository = null,
@@ -38,6 +40,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _muleStorage = muleStorage ?? throw new ArgumentNullException(nameof(muleStorage));
             _muleSerializer = muleSerializer ?? throw new ArgumentNullException(nameof(muleSerializer));
             _commitNotifier = commitNotifier ?? throw new ArgumentNullException(nameof(commitNotifier));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _dispatchRepository = dispatchRepository;
@@ -57,6 +60,39 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 await EnqueueScheduledAsync(command, scheduledOnUtc, cancellationToken);
                 return;
+            }
+
+            if (HasRuntimeDispatchState(command))
+            {
+                try
+                {
+                    var directAction = ActivatorUtilities.CreateInstance<RemoteCommandDispatchAction>(_serviceProvider);
+                    await directAction.ExecuteDirectAsync(command, cancellationToken);
+                    return;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (RemoteCommandConfigurationException exception)
+                {
+                    // The direct action has already persisted this deterministic terminal
+                    // failure. Enqueuing the same invalid command cannot repair it.
+                    _logger.LogError(
+                        exception,
+                        "Direct remote command dispatch '{DispatchId}' has a terminal configuration failure.",
+                        command.DispatchId);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    // QueuePending is already durable. Mule is materialized only for the
+                    // failed/uncertain path and keeps its normal retry and recovery policy.
+                    _logger.LogDebug(
+                        exception,
+                        "Direct remote command dispatch '{DispatchId}' failed; activating durable Mule recovery.",
+                        command.DispatchId);
+                }
             }
 
             global::Mule.Ulid actionId;
@@ -141,7 +177,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             await CaptureActionReferenceAsync(command, actionId, action.Lane, cancellationToken);
             await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);
-            ScheduleDueNotification(actionId, action.Lane, scheduledOnUtc);
+
         }
 
         private async Task CaptureActionReferenceAsync(
@@ -168,23 +204,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         return;
                     }
 
-                    dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
-                    dispatch.Metadata["Mule.Lane"] = JsonValue.Create(lane);
-                    await dispatchRepository.Update(dispatch, token);
+                    var acceptedStatus = command.ScheduledOnUtc is { } scheduledOnUtc &&
+                        scheduledOnUtc > DateTimeOffset.UtcNow ? "Scheduled" : "Enqueued";
+                    if (dispatchRepository is ITaskDispatchActionReferenceRepository atomicReferences)
+                    {
+                        await atomicReferences.CaptureActionReference(
+                            dispatch.Id, actionId.ToString(), lane, acceptedStatus, token);
+                    }
+                    else
+                    {
+                        dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
+                        dispatch.Metadata["Mule.Lane"] = JsonValue.Create(lane);
+                        if (string.Equals(dispatch.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase))
+                            dispatch.DispatchStatus = acceptedStatus;
+                        await dispatchRepository.Update(dispatch, token);
+                    }
                     if (dispatch.PhysicalCancellationPending && _cancellationRecoveryCoordinator is not null)
                     {
                         await _cancellationRecoveryCoordinator.ReconcileAsync(dispatch.Id, token);
                     }
                 }
 
-                if (_instanceCoordinator is not null && System.Ulid.TryParse(command.OrchestrationInstanceId, out var instanceId))
-                {
-                    await _instanceCoordinator.TryExecuteAsync(new Id(instanceId), CaptureAsync, cancellationToken);
-                }
-                else
-                {
-                    await CaptureAsync(cancellationToken);
-                }
+                // This row belongs to the independent dispatch graph, not to the mutable
+                // orchestration cursor. Different parallel tasks update different rows and
+                // must not serialize behind the instance lease.
+                await CaptureAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -198,46 +242,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     "Mule action '{ActionId}' was enqueued but could not be associated with task dispatch '{DispatchId}'.",
                     actionId,
                     command.DispatchId);
-            }
-        }
-
-        private void ScheduleDueNotification(global::Mule.Ulid actionId, string lane, DateTimeOffset scheduledOnUtc)
-        {
-            var delay = scheduledOnUtc - DateTimeOffset.UtcNow;
-            if (delay < TimeSpan.Zero)
-            {
-                delay = TimeSpan.Zero;
-            }
-
-            // Immediate dispatch does not continuously poll future durable work. The persisted action is still
-            // recovered after a restart; this local wake-up only re-notifies Mule at the exact due instant.
-            var scopeFactory = _scopeFactory;
-            var logger = _logger;
-            void Schedule() => _ = Task.Run(async () =>
-            {
-                if (delay > TimeSpan.Zero)
-                {
-                    await Task.Delay(delay);
-                }
-
-                try
-                {
-                    using var scope = scopeFactory.CreateScope();
-                    var commitNotifier = scope.ServiceProvider.GetRequiredService<IMuleCommitNotifier>();
-                    await commitNotifier.NotifySavedAsync(actionId, lane, CancellationToken.None);
-                }
-                catch (Exception exception)
-                {
-                    logger.LogWarning(
-                        exception,
-                        "Mule scheduled remote command dispatch action '{ActionId}' could not be re-notified when it became due.",
-                        actionId);
-                }
-            });
-            if (ExecutionContext.IsFlowSuppressed()) Schedule();
-            else
-            {
-                using (ExecutionContext.SuppressFlow()) Schedule();
             }
         }
 
@@ -268,5 +272,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             return command.OrchestrationInstanceId;
         }
+
+        private static bool HasRuntimeDispatchState(RemoteCommand command)
+            => !string.IsNullOrWhiteSpace(command.OrchestrationInstanceId)
+                && !string.IsNullOrWhiteSpace(command.TaskExecutionId)
+                && !string.IsNullOrWhiteSpace(command.TaskExecutionAttemptId)
+                && !string.IsNullOrWhiteSpace(command.DispatchId);
     }
 }

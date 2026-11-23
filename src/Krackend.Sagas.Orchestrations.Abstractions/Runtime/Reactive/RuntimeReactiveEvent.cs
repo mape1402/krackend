@@ -8,6 +8,14 @@ namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 /// </summary>
 public sealed class RuntimeReactiveEvent
 {
+    /// <summary>Copies notification metadata without retaining the runtime payload.</summary>
+    public RuntimeReactiveEvent CreateNotificationSnapshot()
+    {
+        var snapshot = (RuntimeReactiveEvent)MemberwiseClone();
+        snapshot.Payload = null;
+        return snapshot;
+    }
+
     /// <summary>
     /// Gets or sets event id.
     /// </summary>

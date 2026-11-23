@@ -1,0 +1,9 @@
+<Project>
+  <Import Project="../../../Directory.Build.targets" />
+  <ItemGroup>
+    <PackageReference Update="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Update="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Update="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+  </ItemGroup>
+</Project>
+

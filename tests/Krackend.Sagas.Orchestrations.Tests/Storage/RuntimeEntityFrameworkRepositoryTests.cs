@@ -90,7 +90,10 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
         await db.Database.EnsureCreatedAsync();
         var now = DateTime.UtcNow;
-        var instanceId = Id.New();
+        var activeInstance = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-5));
+        var terminalInstance = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now.AddMinutes(-5));
+        db.OrchestrationInstances.AddRange(activeInstance, terminalInstance);
+        var instanceId = activeInstance.Id;
         var stageId = Id.New();
         db.TaskExecutions.AddRange(Enumerable.Range(0, 100).Select(i => new TaskExecution
         {
@@ -105,6 +108,13 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             WaitingSinceUtc = now.AddMinutes(-2), ResponseDeadlineUtc = now.AddMinutes(-1)
         }).ToArray();
         db.TaskExecutions.AddRange(due);
+        var terminalDue = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = terminalInstance.Id, StageExecutionId = stageId,
+            TaskKey = "terminal-orphan", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now.AddMinutes(-2), ResponseDeadlineUtc = now.AddMinutes(-1)
+        };
+        db.TaskExecutions.Add(terminalDue);
         await db.SaveChangesAsync();
 
         var tasks = scope.ServiceProvider.GetRequiredService<ITaskExecutionRepository>();
@@ -112,6 +122,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         {
             var page = await tasks.GetResponseTimeoutsDue(now, take: 100);
             Assert.All(due, task => Assert.Contains(page, candidate => candidate.Id == task.Id));
+            Assert.DoesNotContain(page, candidate => candidate.Id == terminalDue.Id);
         }
     }
 
@@ -1534,6 +1545,8 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
         var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
         await repository.Create(instance);
+        instance.LastUpdatedOnUtc = instance.LastUpdatedOnUtc.AddMilliseconds(1);
+        await repository.Update(instance);
         instance.Status = OrchestrationInstanceStatus.DeadLettered;
         await repository.Update(instance);
         instance.Status = OrchestrationInstanceStatus.Completed;
@@ -1544,8 +1557,41 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         await using var reader = await command.ExecuteReaderAsync();
         var observations = new List<(long Revision, string Status)>();
         while (await reader.ReadAsync()) observations.Add((reader.GetInt64(0), reader.GetString(1)));
-        Assert.Equal([(1L, "Running"), (2L, "DeadLettered"), (3L, "Completed")], observations);
-        Assert.Equal(3, (await repository.GetById(instance.Id)).StatisticsRevision);
+        Assert.Equal([(1L, "Running"), (3L, "DeadLettered"), (4L, "Completed")], observations);
+        Assert.Equal(4, (await repository.GetById(instance.Id)).StatisticsRevision);
+    }
+
+    [Fact]
+    public async Task StatisticsStatusChangeIsDetectedAfterInstanceIsReloaded()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        var instanceId = Id.New();
+
+        using (var createScope = provider.CreateScope())
+        {
+            await createScope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+            var repository = createScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+            var instance = Instance(Id.New(), OrchestrationInstanceStatus.Created, DateTime.UtcNow);
+            instanceId = instance.Id;
+            await repository.Create(instance);
+        }
+
+        using (var updateScope = provider.CreateScope())
+        {
+            var repository = updateScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+            var reloaded = await repository.GetById(instanceId);
+            reloaded.Status = OrchestrationInstanceStatus.Running;
+            await repository.Update(reloaded);
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Revision, Status FROM SagaStatisticsObservations ORDER BY Revision";
+        await using var reader = await command.ExecuteReaderAsync();
+        var observations = new List<(long Revision, string Status)>();
+        while (await reader.ReadAsync()) observations.Add((reader.GetInt64(0), reader.GetString(1)));
+        Assert.Equal([(1L, "Created"), (2L, "Running")], observations);
     }
 
     [Fact]

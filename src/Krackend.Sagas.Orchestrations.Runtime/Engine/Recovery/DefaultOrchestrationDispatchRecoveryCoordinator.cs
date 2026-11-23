@@ -13,6 +13,11 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchestrationDispatchRecoveryCoordinator
 {
+    // Healthy direct delivery remains WaitingResponse with no SentOnUtc receipt for the
+    // callback to acknowledge in the same functional commit. Replay only intents that
+    // outlived the normal direct handoff; QueuePending is reserved for exceptional Mule
+    // delivery and no longer receives one write per healthy task.
+    private static readonly TimeSpan DirectHandoffRecoveryGrace = TimeSpan.FromSeconds(30);
     private const string DeliveryProviderKeyMetadataKey = "Runtime.Delivery.ProviderKey";
     private const string DeliveryCommandMetadataKey = "Runtime.Delivery.Command";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -53,9 +58,15 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
     {
         var candidates = await _dispatchRepository.GetQueuePending(Math.Max(1, take), cancellationToken);
         var recovered = 0;
+        var recoveryCutoffUtc = DateTime.UtcNow.Subtract(DirectHandoffRecoveryGrace);
 
         foreach (var candidate in candidates)
         {
+            if (IsFreshPreparedDirectIntent(candidate, recoveryCutoffUtc))
+            {
+                continue;
+            }
+
             var attempt = await _attemptRepository.GetById(candidate.TaskExecutionAttemptId, cancellationToken);
             var task = attempt is null
                 ? null
@@ -80,6 +91,19 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         return recovered;
     }
 
+    private static bool IsFreshPreparedDirectIntent(TaskDispatch dispatch, DateTime recoveryCutoffUtc)
+    {
+        if (dispatch.ScheduledOnUtc is not { } scheduledOnUtc || scheduledOnUtc <= recoveryCutoffUtc ||
+            !dispatch.Metadata.TryGetValue(DeliveryCommandMetadataKey, out var commandNode) ||
+            commandNode is not JsonObject command)
+        {
+            return false;
+        }
+
+        return command.TryGetPropertyValue("isPreparedDirectActivation", out var preparedNode) &&
+               preparedNode?.GetValue<bool>() == true;
+    }
+
     public async Task<bool> RecoverDispatchAsync(Id dispatchId, CancellationToken cancellationToken = default)
     {
         var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
@@ -97,7 +121,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
     private async Task<bool> RecoverDispatchCoreAsync(Id dispatchId, CancellationToken cancellationToken)
     {
         var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
-        if (dispatch is null || !IsQueuePending(dispatch.DispatchStatus))
+        if (dispatch is null || !IsRecoveryPending(dispatch))
         {
             return false;
         }
@@ -120,7 +144,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             return true;
         }
 
-        if (!TryReadRecoveryRequest(dispatch, out var providerKey, out var command, out var reason))
+        if (!TryReadRecoveryRequest(dispatch, attempt, task, instance, out var providerKey, out var command, out var reason))
         {
             await FailDispatchRecoveryAsync(instance, task, attempt, dispatch, "DispatchRecoverySnapshotMissing", reason, cancellationToken);
             await AdvanceFailedInstanceAsync(instance, cancellationToken);
@@ -188,15 +212,19 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         CancellationToken cancellationToken)
     {
         var persisted = await _dispatchRepository.TryGetById(dispatch.Id, cancellationToken);
-        if (persisted is null || !IsQueuePending(persisted.DispatchStatus))
+        if (persisted is null || !IsRecoveryPending(persisted))
         {
             return;
         }
 
         var now = DateTime.UtcNow;
-        persisted.DispatchStatus = command.ScheduledOnUtc is { } scheduledOnUtc && scheduledOnUtc > now
-            ? "Scheduled"
-            : "Enqueued";
+        var previousStatus = persisted.DispatchStatus;
+        persisted.DispatchStatus = command.AwaitResponse
+            ? "WaitingResponse"
+            : command.ScheduledOnUtc is { } scheduledOnUtc && scheduledOnUtc > now
+                ? "Scheduled"
+                : "Enqueued";
+        persisted.SentOnUtc ??= command.AwaitResponse ? now : null;
         persisted.FailedOnUtc = null;
         persisted.FailureReason = null;
         persisted.Metadata["Runtime.Delivery.RecoveryStatus"] = JsonValue.Create(result.Status);
@@ -207,13 +235,13 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             await _dispatchRepository.Update(persisted, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = "TaskDispatchRecovered",
-                FromStatus = "QueuePending",
+                FromStatus = previousStatus,
                 ToStatus = persisted.DispatchStatus,
                 OccurredOnUtc = now,
                 Message = result.Message,
@@ -234,7 +262,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         CancellationToken cancellationToken)
     {
         var persisted = await _dispatchRepository.TryGetById(dispatch.Id, cancellationToken);
-        if (persisted is null || !IsQueuePending(persisted.DispatchStatus))
+        if (persisted is null || !IsRecoveryPending(persisted))
         {
             return;
         }
@@ -249,14 +277,14 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             await _dispatchRepository.Update(persisted, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = "TaskDispatchRecoveryDeferred",
-                FromStatus = "QueuePending",
-                ToStatus = "QueuePending",
+                FromStatus = persisted.DispatchStatus,
+                ToStatus = persisted.DispatchStatus,
                 OccurredOnUtc = now,
                 Message = exception.Message,
                 ProducedBy = nameof(DefaultOrchestrationDispatchRecoveryCoordinator)
@@ -274,6 +302,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         TaskDispatch dispatch,
         CancellationToken cancellationToken)
     {
+        var previousStatus = dispatch.DispatchStatus;
         dispatch.DispatchStatus = "Cancelled";
         dispatch.FailedOnUtc = DateTime.UtcNow;
         dispatch.FailureReason = "Dispatch is no longer the current executable task attempt.";
@@ -283,13 +312,13 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             await _dispatchRepository.Update(dispatch, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = "TaskDispatchRecoverySuppressed",
-                FromStatus = "QueuePending",
+                FromStatus = previousStatus,
                 ToStatus = "Cancelled",
                 OccurredOnUtc = dispatch.FailedOnUtc.Value,
                 Message = dispatch.FailureReason,
@@ -311,6 +340,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
+        var previousStatus = dispatch.DispatchStatus;
         dispatch.DispatchStatus = "Failed";
         dispatch.FailedOnUtc = now;
         dispatch.FailureReason = message;
@@ -338,13 +368,13 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = "TaskDispatchRecoveryFailed",
-                FromStatus = "QueuePending",
+                FromStatus = previousStatus,
                 ToStatus = "Failed",
                 OccurredOnUtc = now,
                 Message = message,
@@ -377,12 +407,14 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         TaskExecution task,
         TaskExecutionAttempt attempt)
         => !IsTerminal(instance.Status) &&
-           task.Status == TaskExecutionStatus.Running &&
-           attempt.Status == TaskExecutionStatus.Running &&
+           (task.Status == TaskExecutionStatus.Running && attempt.Status == TaskExecutionStatus.Running ||
+            task.Status == TaskExecutionStatus.WaitingResponse && attempt.Status == TaskExecutionStatus.WaitingResponse) &&
            (task.LastAttemptNumber == 0 || task.LastAttemptNumber == attempt.AttemptNumber);
 
-    private static bool IsQueuePending(string status)
-        => string.Equals(status, "QueuePending", StringComparison.OrdinalIgnoreCase);
+    private static bool IsRecoveryPending(TaskDispatch dispatch)
+        => string.Equals(dispatch.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) &&
+           dispatch.SentOnUtc is null;
 
     private static bool IsTerminal(OrchestrationInstanceStatus status)
         => status is OrchestrationInstanceStatus.Completed
@@ -394,6 +426,9 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
 
     private static bool TryReadRecoveryRequest(
         TaskDispatch dispatch,
+        TaskExecutionAttempt attempt,
+        TaskExecution task,
+        OrchestrationInstance instance,
         out string providerKey,
         out RemoteCommand command,
         out string reason)
@@ -426,6 +461,71 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         {
             return false;
         }
+
+        if (command.MessageMetadata is null)
+        {
+            if (dispatch.Metadata.TryGetValue(
+                    OrchestrationMetadataConstants.OrchestrationMessageMetadataKey,
+                    out var messageMetadataNode) &&
+                messageMetadataNode is not null)
+            {
+                try
+                {
+                    command.MessageMetadata = messageMetadataNode.Deserialize<OrchestrationMessageMetadata>(SerializerOptions);
+                }
+                catch (JsonException)
+                {
+                    reason = $"Dispatch '{dispatch.Id}' contains invalid orchestration message metadata.";
+                    return false;
+                }
+            }
+
+            // Older recovery snapshots did not always persist the transport envelope.
+            // Preserve their replay compatibility with the ownership graph we have
+            // already validated above.
+            command.MessageMetadata ??= new OrchestrationMessageMetadata
+            {
+                SagaId = string.IsNullOrWhiteSpace(instance.SagaId) ? instance.Id.ToString() : instance.SagaId,
+                OrchestrationInstanceId = instance.Id.ToString(),
+                CurrentStage = command.StageKey,
+                CurrentTasks = [task.TaskKey],
+                CorrelationId = string.IsNullOrWhiteSpace(task.CorrelationId)
+                    ? dispatch.CorrelationId
+                    : task.CorrelationId,
+                TaskExecutionId = task.Id.ToString(),
+                DispatchId = dispatch.Id.ToString(),
+                Attempt = attempt.AttemptNumber
+            };
+        }
+
+        if (command.PropagationMetadata is not { HasItems: true })
+        {
+            command.PropagationMetadata = new OrchestrationPropagationMetadata();
+            foreach (var item in dispatch.Metadata)
+            {
+                if (string.Equals(
+                        item.Key,
+                        OrchestrationMetadataConstants.OrchestrationMessageMetadataKey,
+                        StringComparison.Ordinal) ||
+                    string.Equals(item.Key, DeliveryProviderKeyMetadataKey, StringComparison.Ordinal) ||
+                    string.Equals(item.Key, DeliveryCommandMetadataKey, StringComparison.Ordinal) ||
+                    string.Equals(item.Key, "ResolvedExecutionPolicy", StringComparison.Ordinal) ||
+                    item.Key.StartsWith("Runtime.", StringComparison.Ordinal) ||
+                    item.Key.StartsWith("Mule.", StringComparison.Ordinal) ||
+                    item.Key.StartsWith("Recovery.", StringComparison.Ordinal) ||
+                    RemoteCommandMetadataBuilder.IsReserved(item.Key))
+                {
+                    continue;
+                }
+
+                command.PropagationMetadata.Items[item.Key] = item.Value?.DeepClone();
+            }
+        }
+
+        // New snapshots intentionally omit the duplicated payload. The attempt is
+        // part of the same durable dispatch graph and is its canonical owner.
+        if (string.IsNullOrWhiteSpace(command.Payload) && attempt.RequestPayload is not null)
+            command.Payload = attempt.RequestPayload.ToJsonString();
 
         providerKey = providerNode.GetValue<string>();
         return true;

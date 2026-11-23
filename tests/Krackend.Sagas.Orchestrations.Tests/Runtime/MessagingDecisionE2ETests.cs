@@ -789,7 +789,7 @@ public sealed class MessagingDecisionE2ETests
         await attemptRepository.Update(attempt);
         await dispatchRepository.Update(dispatch);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<OrchestrationCallbackNotReadyException>(() =>
             harness.ForwardAsync(command, BusinessPayload("early-response"), Success()));
 
         Assert.Contains("before runtime state was ready", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -1982,7 +1982,7 @@ public sealed class MessagingDecisionE2ETests
             attempt.WaitingSinceUtc = sentOnUtc;
             dispatch.SentOnUtc = sentOnUtc;
             await attemptRepository.Update(attempt);
-            await dispatchRepository.Update(dispatch);
+            harness.SeedDispatchSnapshot(dispatch);
             task.WaitingSinceUtc = missingWaitingTimestamp ? null : sentOnUtc;
             task.ResponseDeadlineUtc = missingDeadline ? null : sentOnUtc.AddSeconds(60);
             task.TimeoutActionId = null;
@@ -2203,7 +2203,7 @@ public sealed class MessagingDecisionE2ETests
             dispatch.Metadata["Recovery.DispatchCancellationProviderStatus"] = JsonValue.Create(confirmedCancellation ? "Cancelled" : "TooLate");
             await taskRepository.Update(task);
             await attemptRepository.Update(attempt);
-            await dispatchRepository.Update(dispatch);
+            harness.SeedDispatchSnapshot(dispatch);
         }
 
         var recovery = harness.Services.GetRequiredService<IOrchestrationRecoveryService>();

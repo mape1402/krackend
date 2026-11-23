@@ -57,6 +57,59 @@ public sealed class RuntimeStateTransactionTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => transaction.ExecuteAsync(null!));
     }
 
+    [Fact]
+    public async Task ExecuteDeferredAsyncFlushesOnceAtTheEndOfAnActiveBatch()
+    {
+        var unitOfWork = new RecordingRuntimeStorageUnitOfWork();
+        var transaction = new RuntimeStateTransaction(unitOfWork);
+        var mutations = 0;
+
+        await transaction.ExecuteBatchAsync(async token =>
+        {
+            Assert.Equal(0, unitOfWork.BeginTransactionCount);
+            await transaction.ExecuteDeferredAsync(_ =>
+            {
+                mutations++;
+                return Task.CompletedTask;
+            }, token);
+            await transaction.ExecuteDeferredAsync(_ =>
+            {
+                mutations++;
+                return Task.CompletedTask;
+            }, token);
+        });
+
+        Assert.Equal(2, mutations);
+        Assert.Equal(0, unitOfWork.BeginTransactionCount);
+        Assert.Equal(1, unitOfWork.DeferAutoSaveCount);
+        Assert.Equal(1, unitOfWork.SaveChangesCount);
+        Assert.Equal(0, unitOfWork.Transaction.CommitCount);
+        Assert.False(unitOfWork.Transaction.WasDisposed);
+    }
+
+    [Fact]
+    public async Task ExecuteBatchUsesOneAtomicSaveWithoutAnOuterTransaction()
+    {
+        var unitOfWork = new RecordingRuntimeStorageUnitOfWork();
+        var transaction = new RuntimeStateTransaction(unitOfWork);
+
+        await transaction.ExecuteBatchAsync(async token =>
+        {
+            Assert.Equal(0, unitOfWork.BeginTransactionCount);
+            await Task.Yield();
+            Assert.Equal(0, unitOfWork.BeginTransactionCount);
+
+            await transaction.ExecuteAsync(_ => Task.CompletedTask, token);
+
+            Assert.Equal(0, unitOfWork.BeginTransactionCount);
+        });
+
+        Assert.Equal(0, unitOfWork.BeginTransactionCount);
+        Assert.Equal(1, unitOfWork.SaveChangesCount);
+        Assert.Equal(0, unitOfWork.Transaction.CommitCount);
+        Assert.False(unitOfWork.Transaction.WasDisposed);
+    }
+
     private sealed class RecordingRuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
     {
         public bool AutoSaveChanges => true;

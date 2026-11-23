@@ -201,6 +201,57 @@ public sealed class CompensateInstanceDecisionHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsyncResolvesRepeatedTaskKeysWithinTheirOwnStages()
+    {
+        var fixture = new CompensationFixture();
+        fixture.AdapterRegistry.Adapter = new RecordingTaskRuntimeAdapter();
+        var instance = CreateInstance();
+        var firstStage = StageExecution(instance.Id);
+        var secondStage = new StageExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageKey = "stage-two",
+            Order = 2,
+            Status = StageExecutionStatus.Completed,
+            CompletedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        var firstTask = CompletedTask(
+            instance.Id, firstStage.Id, "task-one", DateTime.UtcNow.AddMinutes(-2));
+        var secondTask = CompletedTask(
+            instance.Id, secondStage.Id, "task-one", DateTime.UtcNow.AddMinutes(-1));
+        fixture.Arrange(
+            instance,
+            [firstTask, secondTask],
+            [firstStage, secondStage],
+            CreateResolvedArtifact(
+                instance.RuntimeOrchestrationArtifactId,
+                Stage("stage-one", MessagingTask("task-one") with
+                {
+                    Compensation = Compensation("commands.undo.first")
+                }),
+                Stage("stage-two", MessagingTask("task-one") with
+                {
+                    Compensation = Compensation("commands.undo.second")
+                })));
+
+        await fixture.Handler.HandleAsync(new CompensateInstanceDecision(
+            instance.Id,
+            instance.RuntimeOrchestrationArtifactId.ToString(),
+            "{}"));
+
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, instance.Status);
+        Assert.Equal(2, fixture.CreatedCompensations.Count);
+        Assert.Equal(2, fixture.RemoteCommands.Count);
+        Assert.Equal(
+            ["stage-one", "stage-two"],
+            fixture.RemoteCommands
+                .Select(command => command.MessageMetadata.CurrentStage)
+                .Order(StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
     public async Task HandleAsyncRetainsAPersistedCompensationIntentWhenDeliveryCannotBeConfirmed()
     {
         var fixture = new CompensationFixture();

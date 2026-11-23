@@ -169,14 +169,14 @@ public sealed class RuntimeReactiveEventMessageTests
     }
 
     [Fact]
-    public async Task FanoutFailureDoesNotPreventLocalDelivery()
+    public async Task PublisherDoesNotCallFanoutOnTheMutationPath()
     {
         var queue = new SignalRRuntimeReactiveEventQueue();
         var fanout = new FakeFanout { FailPublish = true };
         var publisher = new SignalRRuntimeReactiveEventPublisher(queue, fanout, NullLogger<SignalRRuntimeReactiveEventPublisher>.Instance);
         var eventData = CreateEvent();
         await publisher.Publish(eventData);
-        Assert.Same(eventData, fanout.LastPublished);
+        Assert.Null(fanout.LastPublished);
         Assert.True(queue.Reader.TryRead(out var message));
         Assert.Equal(eventData.Id.ToString(), message.Id);
     }

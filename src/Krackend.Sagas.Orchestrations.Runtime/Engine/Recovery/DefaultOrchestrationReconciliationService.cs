@@ -198,8 +198,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
                     else if (scheduler.UsesDurableScheduling)
                     {
                         var timerState = await workInspector.InspectTimeoutAsync(task, attempt, cancellationToken);
-                        if (timerState is DurableWorkPresence.Missing or DurableWorkPresence.Terminal ||
-                            (string.IsNullOrWhiteSpace(task.TimeoutActionId) && timerState == DurableWorkPresence.Present))
+                        if (timerState is DurableWorkPresence.Missing or DurableWorkPresence.Terminal)
                         {
                             var previousActionId = task.TimeoutActionId;
                             if (timerState == DurableWorkPresence.Terminal && string.IsNullOrWhiteSpace(previousActionId))
@@ -368,7 +367,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
     private Task RecordAsync(OrchestrationInstance instance, string type, string message, CancellationToken cancellationToken, JsonNode payload = null)
         => transitions.Create(new ExecutionTransition
         {
-            Id = Id.New(), OrchestrationInstanceId = instance.Id, TransitionType = type,
+            Id = Id.NewDistributed(), OrchestrationInstanceId = instance.Id, TransitionType = type,
             FromStatus = instance.Status.ToString(), ToStatus = instance.Status.ToString(),
             OccurredOnUtc = DateTime.UtcNow, Message = message, Payload = payload,
             ProducedBy = nameof(DefaultOrchestrationReconciliationService)

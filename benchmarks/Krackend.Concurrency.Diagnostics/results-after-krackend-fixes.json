@@ -1,0 +1,31 @@
+[
+  {
+    "test": "independent_instances_control",
+    "completed": 20,
+    "acquisitionCalls": 20
+  },
+  {
+    "test": "twenty_contenders_one_busy_instance",
+    "rejected": 20,
+    "acquisitionCalls": 1200,
+    "elapsedMs": 2036
+  },
+  {
+    "test": "slow_dashboard_fanout_does_not_hold_lease",
+    "contenderAccepted": true,
+    "elapsedMs": 33
+  },
+  {
+    "test": "lost_lease_is_not_reported_as_success",
+    "returnedSuccess": false,
+    "observedCancellation": true,
+    "leaseLossReported": true
+  },
+  {
+    "test": "mule_poison_terminal_blocks_healthy_completion",
+    "failures": 3,
+    "requeuedBatches": 3,
+    "committedHealthyCompletions": 0,
+    "remainingInBatch": 2
+  }
+]

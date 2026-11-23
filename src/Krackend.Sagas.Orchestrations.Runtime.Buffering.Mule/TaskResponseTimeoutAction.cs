@@ -15,8 +15,14 @@ public sealed class TaskResponseTimeoutAction(
         MuleActionContext<TaskResponseTimeoutActionRequest> context,
         CancellationToken cancellationToken)
     {
+        await MuleCooperativeExecution.RunAsync(context, () => ExecuteCoreAsync(context, cancellationToken));
+    }
+
+    private async Task ExecuteCoreAsync(MuleActionContext<TaskResponseTimeoutActionRequest> context, CancellationToken cancellationToken)
+    {
         var request = context.Payload ?? throw new InvalidOperationException("Task response timeout payload cannot be empty.");
         var result = await processor.ProcessTaskTimeoutAsync(
+            new Id(System.Ulid.Parse(request.OrchestrationInstanceId)),
             new Id(System.Ulid.Parse(request.TaskExecutionId)),
             DateTime.UtcNow,
             cancellationToken);
@@ -25,9 +31,9 @@ public sealed class TaskResponseTimeoutAction(
         // deadline would deduplicate against the action currently being executed.
         if (result.RetryRequired)
         {
-            if (result.WaitingForResponseProcessing)
-                throw new InvalidOperationException($"Timeout for instance '{request.OrchestrationInstanceId}', task '{request.TaskExecutionId}', attempt {request.AttemptNumber}, dispatch '{request.DispatchId}' is deferred while its on-time response is processed.");
-            throw new InvalidOperationException("Task response timeout is still pending; retry processing after instance contention or an early wake-up.");
+            MuleCooperativeExecution.Defer(context, result.WaitingForResponseProcessing
+                ? "krackend.response-accepted-pending" : "krackend.timeout-pending");
+            return;
         }
 
         if (result.ResumeRequired && processor is IOrchestrationTimeoutContinuationProcessor continuation)
@@ -46,15 +52,8 @@ public sealed class TaskResponseTimeoutAction(
             return;
         }
 
-        await scheduler.ScheduleAsync(new TaskResponseTimeoutScheduleRequest
-        {
-            OrchestrationInstanceId = new Id(System.Ulid.Parse(request.OrchestrationInstanceId)),
-            TaskExecutionId = new Id(System.Ulid.Parse(request.TaskExecutionId)),
-            TaskExecutionAttemptId = new Id(System.Ulid.Parse(request.TaskExecutionAttemptId)),
-            DispatchId = new Id(System.Ulid.Parse(request.DispatchId)),
-            AttemptNumber = request.AttemptNumber,
-            DueOnUtc = rescheduleOnUtc
-        }, cancellationToken);
+        MuleCooperativeExecution.Defer(context, "krackend.timeout-before-deadline",
+            new DateTimeOffset(DateTime.SpecifyKind(rescheduleOnUtc, DateTimeKind.Utc)));
     }
 }
 

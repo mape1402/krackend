@@ -111,7 +111,7 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
     }
 
     [Fact]
-    public async Task CancelPendingPhysicallyCancelsEveryReferencedDeliveryWithoutRewritingCompletedOrTimedOutLogicalState()
+    public async Task CancelPendingSkipsFinishedCallbacksButStillCancelsTimedOutDelivery()
     {
         var fixture = new CancellationFixture();
         var instance = CreateInstance(OrchestrationInstanceStatus.Completed);
@@ -132,13 +132,16 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
 
         var cancelled = await fixture.Coordinator.CancelPendingAsync(instance, "instance completed");
 
-        Assert.Equal(2, cancelled);
+        Assert.Equal(1, cancelled);
         Assert.Equal("Completed", completedDispatch.DispatchStatus);
         Assert.Equal("TimedOut", timedOutDispatch.DispatchStatus);
         Assert.DoesNotContain(fixture.Transitions, candidate => candidate.TransitionType == "TaskDispatchCancelled");
-        Assert.Equal(2, fixture.Transitions.Count(candidate => candidate.TransitionType == "TaskDispatchPhysicalCancellationFinalized"));
-        await fixture.CancellationService.Received(2).CancelAsync(
-            Arg.Any<TaskDispatchCancellationRequest>(),
+        Assert.Single(fixture.Transitions.Where(candidate => candidate.TransitionType == "TaskDispatchPhysicalCancellationFinalized"));
+        await fixture.CancellationService.DidNotReceive().CancelAsync(
+            Arg.Is<TaskDispatchCancellationRequest>(request => request.Dispatch == completedDispatch),
+            Arg.Any<CancellationToken>());
+        await fixture.CancellationService.Received(1).CancelAsync(
+            Arg.Is<TaskDispatchCancellationRequest>(request => request.Dispatch == timedOutDispatch),
             Arg.Any<CancellationToken>());
     }
 

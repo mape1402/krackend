@@ -126,7 +126,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 if (staged)
                     foreach (var configuration in configurations) configuration.IsStaged = true;
 
-                await StandUpConfigurationsAsync(scope.ServiceProvider, configurations, cancellationToken);
+                await StandUpConfigurationsAsync(scope.ServiceProvider, configurations, cancellationToken, refreshExisting: force);
                 if (force && _connectors.TryGetValue(artifactId, out var registrations))
                 {
                     var activeIds = configurations.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
@@ -200,7 +200,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             IReadOnlyCollection<IngressConfiguration> configurations,
             CancellationToken cancellationToken = default,
             bool verifyExisting = false,
-            List<IngressConnectorRegistration> added = null)
+            List<IngressConnectorRegistration> added = null,
+            bool refreshExisting = false)
         {
             if (configurations is null)
             {
@@ -217,12 +218,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                     configuration.Id,
                     new IngressConnectorRegistration(configuration.Id, configuration.IngressTransport)))
                 {
-                    if (verifyExisting)
+                    if (verifyExisting || refreshExisting)
                     {
                         var existingConnector = serviceProvider.GetKeyedService<IIngressConector>(configuration.IngressTransport);
-                        if (existingConnector is not IRevalidatableIngressConector revalidatable)
+                        if (existingConnector is IRevalidatableIngressConector revalidatable)
+                            await revalidatable.RevalidateAsync(configuration, cancellationToken);
+                        else if (verifyExisting)
                             throw new IngressStandupConfigurationException($"Ingress configuration '{configuration.Id}' cannot be revalidated for rollback.");
-                        await revalidatable.RevalidateAsync(configuration, cancellationToken);
                     }
                     continue;
                 }

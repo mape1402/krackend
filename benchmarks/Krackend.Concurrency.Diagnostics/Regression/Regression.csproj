@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup><ImportDirectoryBuildProps>false</ImportDirectoryBuildProps><ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AssemblyName>Krackend.Concurrency.RegressionRunner</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <Using Include="Xunit" />
+    <ProjectReference Include="../../../tests/Krackend.Sagas.Orchestrations.Tests/Krackend.Sagas.Orchestrations.Tests.csproj" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

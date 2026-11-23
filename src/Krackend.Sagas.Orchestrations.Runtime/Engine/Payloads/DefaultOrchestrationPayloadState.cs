@@ -43,7 +43,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads
         {
             var root = GetOrCreateRoot(instance?.SnapshotPayload);
             var task = GetOrCreateTask(root, stageKey, taskKey);
-            task[RequestPropertyName] = requestPayload?.DeepClone();
+            task[RequestPropertyName] = OrchestrationPayloadReferences.Compact(root, requestPayload);
             return root;
         }
 
@@ -55,7 +55,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads
         {
             var root = GetOrCreateRoot(instance?.SnapshotPayload);
             var task = GetOrCreateTask(root, stageKey, taskKey);
-            task[ResponsePropertyName] = callbackPayload?.DeepClone();
+            task[ResponsePropertyName] = OrchestrationPayloadReferences.Compact(root, callbackPayload);
             return root;
         }
 

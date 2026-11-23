@@ -45,7 +45,10 @@ public sealed class SignalRRuntimeReactiveEventDispatcher : BackgroundService
     /// <summary>
     /// Runs the SignalR event dispatch loop.
     /// </summary>
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => Task.WhenAll(DispatchLocalEvents(stoppingToken), DispatchFanoutEvents(stoppingToken));
+
+    private async Task DispatchLocalEvents(CancellationToken stoppingToken)
     {
         await foreach (var message in _queue.Reader.ReadAllAsync(stoppingToken))
         {
@@ -53,6 +56,34 @@ public sealed class SignalRRuntimeReactiveEventDispatcher : BackgroundService
             if (_queue.TryTakeResynchronizationRequired())
             {
                 await NotifyResync();
+            }
+        }
+    }
+
+    private async Task DispatchFanoutEvents(CancellationToken stoppingToken)
+    {
+        if (_fanout is null) return;
+
+        await foreach (var eventData in _queue.FanoutReader.ReadAllAsync(stoppingToken))
+        {
+            try
+            {
+                await _fanout.PublishAsync(eventData, stoppingToken);
+                if (_queue.TryTakeFanoutResynchronizationRequired())
+                {
+                    // Clear before publishing so a concurrent overflow schedules
+                    // another reconciliation rather than losing the signal.
+                    await _fanout.PublishResyncAsync(stoppingToken);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _queue.RequireFanoutResynchronization();
+                _logger.LogWarning(exception, "Unable to distribute runtime event {EventId} to other replicas.", eventData.Id);
             }
         }
     }

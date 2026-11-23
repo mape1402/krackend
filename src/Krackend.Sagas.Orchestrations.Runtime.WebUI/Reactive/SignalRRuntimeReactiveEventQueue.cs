@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 
@@ -16,6 +17,28 @@ public sealed class SignalRRuntimeReactiveEventQueue
             FullMode = BoundedChannelFullMode.Wait
         });
     private int _resynchronizationRequired;
+    private readonly Channel<RuntimeReactiveEvent> _fanoutChannel = Channel.CreateBounded<RuntimeReactiveEvent>(
+        new BoundedChannelOptions(Capacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
+    private int _fanoutResynchronizationRequired;
+
+    internal ChannelReader<RuntimeReactiveEvent> FanoutReader => _fanoutChannel.Reader;
+
+    internal void TryEnqueueFanout(RuntimeReactiveEvent eventData)
+    {
+        if (!_fanoutChannel.Writer.TryWrite(eventData.CreateNotificationSnapshot()))
+            RequireFanoutResynchronization();
+    }
+
+    internal void RequireFanoutResynchronization()
+        => Interlocked.Exchange(ref _fanoutResynchronizationRequired, 1);
+
+    internal bool TryTakeFanoutResynchronizationRequired()
+        => Interlocked.Exchange(ref _fanoutResynchronizationRequired, 0) == 1;
 
     /// <summary>
     /// Gets the event reader consumed by the SignalR dispatcher.

@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+<ItemGroup><PackageReference Include="Pigeon.Messaging.Rabbit" /><ProjectReference Include="../Demo.ServiceKit/Demo.ServiceKit.csproj" /></ItemGroup>
+</Project>
+

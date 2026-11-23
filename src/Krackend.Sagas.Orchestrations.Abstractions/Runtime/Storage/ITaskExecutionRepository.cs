@@ -66,3 +66,25 @@ public interface IResponseTimeoutRepairPageReader
     Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
         int skip, int take, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Reads tasks from only the stage being advanced.</summary>
+public interface ITaskExecutionStageReader
+{
+    /// <summary>Reads the independent tasks of one stage.</summary>
+    Task<IReadOnlyCollection<TaskExecution>> GetByStageExecutionId(Id stageExecutionId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Atomically associates a durable response timer with the wait it protects.</summary>
+public interface ITaskResponseTimeoutReferenceRepository
+{
+    /// <summary>
+    /// Captures the timer only while the exact task wait is still active. This avoids
+    /// reserving the orchestration lease for independent timeout housekeeping.
+    /// </summary>
+    Task<bool> TryCaptureTimeoutAction(
+        Id taskExecutionId,
+        DateTime responseDeadlineUtc,
+        string actionId,
+        string lane,
+        CancellationToken cancellationToken = default);
+}

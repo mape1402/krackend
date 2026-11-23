@@ -250,7 +250,7 @@ internal sealed class DefaultOrchestrationCompensationRecoveryCoordinator : IOrc
         string message)
         => new()
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = TryParseId(command?.StageExecutionId),
             TaskExecutionId = TryParseId(command?.TaskExecutionId) ?? compensation.SourceTaskExecutionId,

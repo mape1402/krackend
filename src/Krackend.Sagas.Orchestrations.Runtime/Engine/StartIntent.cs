@@ -9,6 +9,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
     /// </summary>
     public class StartIntent
     {
+        /// <summary>Gets whether this operation may wait for a busy instance lease.</summary>
+        public bool WaitForInstanceLease { get; init; } = true;
+
         /// <summary>
         /// Gets the runtime artifact id used to resolve the orchestration definition.
         /// </summary>

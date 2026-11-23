@@ -78,6 +78,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IPromoter, Promoter>();
             services.TryAddScoped<ITriggerPayloadValidator, DefaultTriggerPayloadValidator>();
             services.TryAddScoped<IDecisionControl, DecisionControl>();
+            services.TryAddSingleton<OrchestrationDecisionStateCache>();
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
             services.TryAddScoped<IRuntimeStateTransaction, RuntimeStateTransaction>();
@@ -120,6 +121,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionHandler<EnterIdleInstanceDecision>, EnterIdleInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<RetryDecision>, RetryDecisionHandler>();
             services.TryAddSingleton<IOrchestrationArtifactMigrator, DefaultOrchestrationArtifactMigrator>();
+            services.TryAddSingleton<RuntimeArtifactSnapshotCache>();
+            services.TryAddSingleton<RuntimeBackchannelReplyAddressCache>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();
             services.TryAddScoped<ArchivedRecoveryIngressPreparer>();
@@ -135,7 +138,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.AddOptions<OrchestrationTimeoutOptions>().BindConfiguration("Runtime:Timeouts");
             services.AddOptions<OrchestrationCoordinationOptions>().BindConfiguration("Runtime:Coordination");
             services.TryAddSingleton<IRuntimeReplicaIdentity, DefaultRuntimeReplicaIdentity>();
+            services.TryAddSingleton<OrchestrationInstanceLocalGate>();
             services.TryAddScoped<IOrchestrationInstanceCoordinator, DefaultOrchestrationInstanceCoordinator>();
+            // Lease ownership follows ExecutionContext rather than a DI scope. Keeping
+            // one AsyncLocal carrier allows pooled persistence contexts to observe the
+            // correct mutation without capturing a request-scoped dependency.
+            services.TryAddSingleton<RuntimeMutationLeaseScope>();
             services.TryAddScoped<IRuntimeArtifactProjectionScheduler, ImmediateRuntimeArtifactProjectionScheduler>();
             services.TryAddScoped<IRuntimeIngressStandupScheduler, ImmediateRuntimeIngressStandupScheduler>();
             services.TryAddScoped<IRuntimeArtifactReadyGossipHandler, RuntimeArtifactReadyGossipHandler>();

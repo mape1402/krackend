@@ -19,6 +19,11 @@
             config.IsStaged = configuration.IsStaged;
             config.IngressTransport = configuration.IngressTransport;
             config.ConnectorId = configuration.Id;
+            config.MessageDisposition = configuration.MessageDisposition;
+            config.OrchestrationDefinitionKey = configuration.OrchestrationDefinitionKey;
+            config.OrchestrationVersion = configuration.OrchestrationVersion;
+            config.DeployedOnUtc = configuration.DeployedOnUtc;
+            config.SettingsPayload = configuration.SettingsPayload;
 
             await _messagingAdapter.ConnectAsync(config, cancellationToken);
         }

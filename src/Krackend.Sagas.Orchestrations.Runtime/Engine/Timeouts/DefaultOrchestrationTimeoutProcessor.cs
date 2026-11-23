@@ -148,7 +148,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
                 },
                 Payload = instance.SnapshotPayload?.DeepClone()
             }, token);
-        }, cancellationToken);
+        }, cancellationToken, waitForLease: false);
         if (!acquired) throw new OrchestrationInstanceLeaseUnavailableException(instanceId);
     }
 
@@ -157,6 +157,40 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         DateTime utcNow,
         CancellationToken cancellationToken = default)
         => await ProcessTaskTimeoutAsync(taskExecutionId, utcNow, null, cancellationToken);
+
+    public async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id orchestrationInstanceId,
+        Id taskExecutionId,
+        DateTime utcNow,
+        CancellationToken cancellationToken = default)
+    {
+        await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
+
+        TaskResponseTimeoutProcessingResult result = TaskResponseTimeoutProcessingResult.Ignored;
+        var acquired = await _coordinator.TryExecuteAsync(
+            orchestrationInstanceId,
+            async token =>
+            {
+                TaskExecution task;
+                try
+                {
+                    task = await _taskRepository.GetById(taskExecutionId, token);
+                }
+                catch (KeyNotFoundException)
+                {
+                    return;
+                }
+
+                if (task.OrchestrationInstanceId != orchestrationInstanceId)
+                    return;
+
+                result = await TryProcessTaskCoreAsync(task, utcNow, null, token);
+            },
+            cancellationToken,
+            waitForLease: false);
+
+        return acquired ? result : new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
+    }
 
     public async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
         Id taskExecutionId,
@@ -196,7 +230,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var acquired = await _coordinator.TryExecuteAsync(
             task.OrchestrationInstanceId,
             async token => result = await TryProcessTaskCoreAsync(task, utcNow, batch, token),
-            cancellationToken);
+            cancellationToken,
+            waitForLease: false);
 
         return acquired ? result : new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
     }
@@ -263,8 +298,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
-        if (_workInspector is not null && await _workInspector.InspectPendingResponseAsync(
-                dispatch, attempt, dueOnUtc, cancellationToken) == DurableWorkPresence.Present)
+        if ((dispatch.CallbackPending && dispatch.CallbackAcceptedOnUtc <= dueOnUtc) ||
+            (_workInspector is not null && await _workInspector.InspectPendingResponseAsync(
+                dispatch, attempt, dueOnUtc, cancellationToken) == DurableWorkPresence.Present))
         {
             // The broker delivery was already accepted on time. Keep the timeout recoverable
             // while the durable callback finishes instead of declaring a false timeout.
@@ -356,7 +392,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
@@ -397,7 +433,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,

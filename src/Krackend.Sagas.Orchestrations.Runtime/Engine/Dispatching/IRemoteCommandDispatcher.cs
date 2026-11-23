@@ -13,4 +13,12 @@
         /// <returns>A task that represents the asynchronous dispatch operation.</returns>
         Task DispatchAsync(RemoteCommand command, CancellationToken cancellationToken = default);
     }
+
+    /// <summary>
+    /// Marks a dispatcher whose durable action owns the dispatch state transition after
+    /// acceptance. The engine must not add a second acceptance mutation for this path.
+    /// </summary>
+    public interface IDurableRemoteCommandDispatcher : IRemoteCommandDispatcher
+    {
+    }
 }

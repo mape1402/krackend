@@ -2,6 +2,8 @@ using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -53,7 +55,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             }
 
             builder.Services.Replace(ServiceDescriptor.Scoped<IIntakeBuffer, IntakeBufferMule>());
+            // The runtime database and Mule may use different providers. Always route
+            // deployment projection through the configured Mule client so its durable
+            // action is written to the provider that will actually execute it.
+            builder.Services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactProjectionScheduler,
+                MuleRuntimeArtifactProjectionScheduler>());
+            builder.Services.TryAddSingleton<MuleBackchannelImmediateDispatcher>();
+            builder.Services.TryAddSingleton<IMuleBackchannelImmediateDispatcher>(provider =>
+                provider.GetRequiredService<MuleBackchannelImmediateDispatcher>());
+            builder.Services.AddSingleton<IHostedService>(provider =>
+                provider.GetRequiredService<MuleBackchannelImmediateDispatcher>());
+            builder.Services.TryAddSingleton<MuleCallbackRecoveryCursor>();
+            builder.Services.TryAddScoped<IOrchestrationCallbackRecovery, MuleCallbackRecovery>();
             builder.Services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, MuleRemoteCommandDispatcher>());
+            builder.Services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressStandupScheduler, MuleRuntimeIngressStandupScheduler>());
             builder.Services.Replace(ServiceDescriptor.Scoped<ITaskResponseTimeoutScheduler, MuleTaskResponseTimeoutScheduler>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationDurableWorkInspector, MuleOrchestrationDurableWorkInspector>());
             builder.Services.Replace(ServiceDescriptor.Scoped<ITaskDispatchReplayService, MuleTaskDispatchReplayService>());
@@ -67,7 +82,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 ServiceDescriptor.Singleton<IConfigureOptions<MuleSettings>, MuleRuntimeArtifactLifecycleOptionsConfigurer>());
             builder.Services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IConfigureOptions<MuleSettings>, MuleRuntimeWorkLaneOptionsConfigurer>());
+            builder.Services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IConfigureOptions<MuleSettings>, MuleRuntimeExecutionKeyOptionsConfigurer>());
 
+            return builder;
+        }
+
+        /// <summary>
+        /// Uses the response deadline persisted with each waiting task as the durable
+        /// timeout source instead of creating and cancelling one Mule action per task.
+        /// </summary>
+        public static KrackendOrchestrationsRuntimeBuilder UseDeadlineScanningResponseTimeouts(
+            this KrackendOrchestrationsRuntimeBuilder builder)
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+            builder.Services.Replace(
+                ServiceDescriptor.Scoped<ITaskResponseTimeoutScheduler,
+                    DeadlineScanningTaskResponseTimeoutScheduler>());
             return builder;
         }
     }

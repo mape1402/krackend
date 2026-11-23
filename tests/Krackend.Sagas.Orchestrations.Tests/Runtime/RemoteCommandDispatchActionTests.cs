@@ -10,6 +10,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,65 @@ using System.Text.Json.Nodes;
 
 public sealed class RemoteCommandDispatchActionTests
 {
+    [Fact]
+    public async Task ExecuteDirectAsync_PreparedAwaitedCommand_SchedulesTimeoutWithoutWritingPublicationReceipt()
+    {
+        var instanceId = Id.New();
+        var stageId = Id.New();
+        var taskId = Id.New();
+        var attemptId = Id.New();
+        var dispatchId = Id.New();
+        var deadline = DateTime.UtcNow.AddMinutes(1);
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository, ITaskDispatchPublicationReceiptRepository>();
+        var timeoutScheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        timeoutScheduler.UsesDurableScheduling.Returns(true);
+        timeoutScheduler.ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TaskResponseTimeoutScheduleResult("timeout-action", "runtime-timeout")));
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<IOrchestrationMessageMetadataSetter>(),
+            Substitute.For<IOrchestrationInstanceRepository>(),
+            Substitute.For<ITaskExecutionRepository>(),
+            Substitute.For<ITaskExecutionAttemptRepository>(),
+            dispatchRepository,
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker(),
+            timeoutScheduler: timeoutScheduler);
+        var command = new RemoteCommand
+        {
+            RemoteCommandTransport = RemoteCommandTransport.Messaging,
+            Payload = "{}",
+            OrchestrationInstanceId = instanceId.ToString(),
+            StageExecutionId = stageId.ToString(),
+            TaskExecutionId = taskId.ToString(),
+            TaskExecutionAttemptId = attemptId.ToString(),
+            DispatchId = dispatchId.ToString(),
+            AwaitResponse = true,
+            IsPreparedDirectActivation = true,
+            PreparedResponseDeadlineUtc = deadline,
+            MessageMetadata = new OrchestrationMessageMetadata { Attempt = 1 }
+        };
+
+        await action.ExecuteDirectAsync(command, CancellationToken.None);
+
+        await executor.Received(1).ExecuteAsync(command, Arg.Any<CancellationToken>());
+        await timeoutScheduler.Received(1).ScheduleAsync(
+            Arg.Is<TaskResponseTimeoutScheduleRequest>(request =>
+                request.OrchestrationInstanceId == instanceId &&
+                request.TaskExecutionId == taskId &&
+                request.TaskExecutionAttemptId == attemptId &&
+                request.DispatchId == dispatchId &&
+                request.AttemptNumber == 1 &&
+                request.DueOnUtc == deadline),
+            Arg.Any<CancellationToken>());
+        await ((ITaskDispatchPublicationReceiptRepository)dispatchRepository).DidNotReceiveWithAnyArgs()
+            .RecordPublicationReceipt(default, default, default);
+    }
+
     [Fact]
     public void TerminalStateHelpersDistinguishTerminalAndActiveExecutions()
     {
@@ -1436,7 +1496,7 @@ public sealed class RemoteCommandDispatchActionTests
         var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
         var taskRepository = Substitute.For<ITaskExecutionRepository>();
         var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
-        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository, ITaskDispatchPublicationReceiptRepository>();
         instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
         taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
         attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
@@ -1458,13 +1518,14 @@ public sealed class RemoteCommandDispatchActionTests
             CancellationToken.None);
 
         Assert.True(coordinator.OperationRan);
-        Assert.Equal(instance.Id, Assert.Single(coordinator.InstanceIds));
+        Assert.Single(coordinator.InstanceIds);
+        Assert.All(coordinator.InstanceIds, id => Assert.Equal(instance.Id, id));
         Assert.Equal("Completed", dispatch.DispatchStatus);
         await executor.Received(1).ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenInstanceCoordinatorRejectsLease_DoesNotPublishCommand()
+    public async Task ExecuteAsync_WhenConfirmationLeaseIsBusy_PublishesOnceAndDefersConfirmation()
     {
         var instance = new OrchestrationInstance
         {
@@ -1504,26 +1565,33 @@ public sealed class RemoteCommandDispatchActionTests
         var services = new ServiceCollection();
         services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
         var provider = services.BuildServiceProvider();
+        var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
+        var taskRepository = Substitute.For<ITaskExecutionRepository>();
+        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository, ITaskDispatchPublicationReceiptRepository>();
+        instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
         var action = new RemoteCommandDispatchAction(
             provider,
             Substitute.For<IOrchestrationMessageMetadataSetter>(),
-            Substitute.For<IOrchestrationInstanceRepository>(),
-            Substitute.For<ITaskExecutionRepository>(),
-            Substitute.For<ITaskExecutionAttemptRepository>(),
-            Substitute.For<ITaskDispatchRepository>(),
+            instanceRepository,
+            taskRepository,
+            attemptRepository,
+            dispatchRepository,
             Substitute.For<IExecutionTransitionRepository>(),
             new DefaultMuleTerminalFailureMarker(),
             coordinator: new RecordingOrchestrationInstanceCoordinator(false));
 
-        var exception = await Assert.ThrowsAsync<OrchestrationInstanceLeaseUnavailableException>(
-            async () => await action.ExecuteAsync(
+        await action.ExecuteAsync(
                 CreateContext(provider, instance, task, attempt, dispatch, awaitResponse: false),
-                CancellationToken.None));
-
-        Assert.Equal(instance.Id, exception.InstanceId);
+                CancellationToken.None);
         Assert.Equal("Enqueued", dispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.Running, task.Status);
-        await executor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
+        await executor.Received(1).ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>());
+        await ((ITaskDispatchPublicationReceiptRepository)dispatchRepository).Received(1)
+            .RecordPublicationReceipt(dispatch.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
     private static MuleActionContext<RemoteCommand> CreateContext(

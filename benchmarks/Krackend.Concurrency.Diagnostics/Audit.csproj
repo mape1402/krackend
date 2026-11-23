@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup><ImportDirectoryBuildProps>false</ImportDirectoryBuildProps><ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Pipeline/**/*.cs" />
+    <Compile Remove="Regression/**/*.cs" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/DefaultOrchestrationInstanceCoordinator.cs" Link="Coordinator.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/IOrchestrationInstanceCoordinator.cs" Link="ICoordinator.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/IOrchestrationPostLeaseWork.cs" Link="PostLeaseWork.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/OrchestrationCoordinationOptions.cs" Link="CoordinationOptions.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Storage/OrchestrationInstanceLease.cs" Link="Lease.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Reactive/IRuntimeReactiveEventPublisher.cs" Link="IPublisher.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Reactive/IRuntimeReactiveFanout.cs" Link="IFanout.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Reactive/RuntimeReactiveEvent.cs" Link="Event.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Reactive/RuntimeReactiveEventMessage.cs" Link="Message.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Reactive/SignalRRuntimeReactiveEventPublisher.cs" Link="Publisher.cs" />
+    <Compile Include="../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Reactive/SignalRRuntimeReactiveEventQueue.cs" Link="Queue.cs" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

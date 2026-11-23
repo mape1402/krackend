@@ -639,7 +639,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         await _dispatchRepository.Update(dispatch, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = task.StageExecutionId,
             TaskExecutionId = task.Id,
@@ -697,7 +697,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         await _instanceRepository.Update(instance, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = task.StageExecutionId,
             TaskExecutionId = task.Id,
@@ -738,7 +738,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         await _instanceRepository.Update(instance, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = task.StageExecutionId,
             TaskExecutionId = task.Id,
@@ -762,7 +762,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             return existing.GetValue<string>();
         }
 
-        var requestId = Id.New().ToString();
+        var requestId = Id.NewDistributed().ToString();
         dispatch.Metadata[DispatchReplayRequestIdMetadataKey] = JsonValue.Create(requestId);
         return requestId;
     }
@@ -845,7 +845,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         await _dispatchCancellationCoordinator.CancelPendingAsync(instance, abortReason, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             TransitionType = "InstanceAborted",
             FromStatus = previousStatus.ToString(),
@@ -974,7 +974,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         await _instanceRepository.Update(instance, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = failedStage.Id,
             TransitionType = "StageReplayRequested",
@@ -1006,7 +1006,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     {
         await _transitionRepository.Create(new ExecutionTransition
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = stageExecutionId,
             TaskExecutionId = taskExecutionId,

@@ -12,6 +12,39 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class RedisRuntimeReactiveFanoutTests
 {
     [Fact]
+    public async Task ExplicitReconciliationUsesTheResyncWireMessageAndIgnoresItsOwnOrigin()
+    {
+        var factory = Substitute.For<IRedisRuntimeReactiveConnectionFactory>();
+        var connection = Substitute.For<IConnectionMultiplexer>();
+        var subscriber = Substitute.For<ISubscriber>();
+        var subscribed = new TaskCompletionSource<Action<RedisChannel, RedisValue>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        RedisValue payload = RedisValue.Null;
+        factory.ConnectAsync(Arg.Any<CancellationToken>()).Returns(connection);
+        connection.IsConnected.Returns(true);
+        connection.GetSubscriber(Arg.Any<object>()).Returns(subscriber);
+        subscriber.SubscribeAsync(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => subscribed.TrySetResult(handler)), Arg.Any<CommandFlags>()).Returns(Task.CompletedTask);
+        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Do<RedisValue>(value => payload = value), Arg.Any<CommandFlags>()).Returns(1L);
+        using var fanout = Create(factory, true);
+        var resyncCount = 0;
+        fanout.ResyncRequired += () => Interlocked.Increment(ref resyncCount);
+        await fanout.StartAsync(CancellationToken.None);
+        try
+        {
+            var handler = await subscribed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await fanout.PublishResyncAsync();
+            var message = System.Text.Json.Nodes.JsonNode.Parse(payload.ToString())!;
+            Assert.Equal("resync", message["kind"]!.GetValue<string>());
+            var before = Volatile.Read(ref resyncCount);
+            handler(RedisChannel.Literal("events"), payload);
+            Assert.Equal(before, resyncCount);
+            message["origin"] = "another-replica";
+            handler(RedisChannel.Literal("events"), message.ToJsonString());
+            Assert.Equal(before + 1, resyncCount);
+        }
+        finally { await fanout.StopAsync(CancellationToken.None); }
+    }
+
+    [Fact]
     public async Task DisabledFanoutDoesNotConnect()
     {
         var factory = Substitute.For<IRedisRuntimeReactiveConnectionFactory>();
@@ -36,7 +69,7 @@ public sealed class RedisRuntimeReactiveFanoutTests
         connection.IsConnected.Returns(true);
         connection.GetSubscriber(Arg.Any<object>()).Returns(subscriber);
         subscriber.SubscribeAsync(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => subscribed.TrySetResult(handler)), Arg.Any<CommandFlags>()).Returns(Task.CompletedTask);
-        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Do<RedisValue>(value => payload = value), Arg.Any<CommandFlags>()).Returns(1L);
+        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Do<RedisValue>(value => { if (value.ToString().Contains("\"kind\":\"statistics\"", StringComparison.Ordinal)) payload = value; }), Arg.Any<CommandFlags>()).Returns(1L);
         using var sender = Create(factory, true);
         using var receiver = Create(factory, true);
         await sender.StartAsync(CancellationToken.None);
@@ -96,7 +129,7 @@ public sealed class RedisRuntimeReactiveFanoutTests
         connection.IsConnected.Returns(true);
         connection.GetSubscriber(Arg.Any<object>()).Returns(subscriber);
         subscriber.SubscribeAsync(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => subscribed.TrySetResult(handler)), Arg.Any<CommandFlags>()).Returns(Task.CompletedTask);
-        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Do<RedisValue>(value => payload = value), Arg.Any<CommandFlags>()).Returns(1L);
+        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Do<RedisValue>(value => { if (value.ToString().Contains("\"kind\":\"event\"", StringComparison.Ordinal)) payload = value; }), Arg.Any<CommandFlags>()).Returns(1L);
 
         using var sender = Create(factory, true);
         using var receiver = Create(factory, true);

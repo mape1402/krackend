@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup><ImportDirectoryBuildProps>false</ImportDirectoryBuildProps><ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../Stubs.cs" Link="CoordinatorDependencies.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/DefaultOrchestrationInstanceCoordinator.cs" Link="Coordinator.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/IOrchestrationInstanceCoordinator.cs" Link="ICoordinator.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/IOrchestrationPostLeaseWork.cs" Link="PostLeaseWork.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/OrchestrationCoordinationOptions.cs" Link="CoordinationOptions.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Runtime/Engine/Coordination/OrchestrationInstanceLeaseUnavailableException.cs" Link="LeaseUnavailable.cs" />
+    <Compile Include="../../../src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Storage/OrchestrationInstanceLease.cs" Link="Lease.cs" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

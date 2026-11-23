@@ -39,21 +39,39 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
+        services.TryAddSingleton<RuntimeMutationLeaseScope>();
+        services.TryAddSingleton<RuntimeSqlServerDurableLogFlushCoordinator>();
+        services.TryAddSingleton<RuntimeSqlServerDurableLogFlushInterceptor>();
 
         var storageOptions = new RuntimeEntityFrameworkStorageOptions();
         configureStorage?.Invoke(storageOptions);
 
         services.Configure<RuntimeEntityFrameworkStorageOptions>(options =>
         {
+            options.PersistRoutineExecutionTransitions = storageOptions.PersistRoutineExecutionTransitions;
+            options.PersistSuccessfulTransportOutcomes = storageOptions.PersistSuccessfulTransportOutcomes;
+            options.EmbedCurrentTransportState = storageOptions.EmbedCurrentTransportState;
+            options.CompressSnapshotPayload = storageOptions.CompressSnapshotPayload;
+            options.PersistStatisticsObservations = storageOptions.PersistStatisticsObservations;
+            options.CoordinateSqlServerDurableLogFlushes = storageOptions.CoordinateSqlServerDurableLogFlushes;
+            options.SqlServerDurableLogFlushWindow = storageOptions.SqlServerDurableLogFlushWindow;
+            options.SqlServerDurableLogFlushConcurrency = storageOptions.SqlServerDurableLogFlushConcurrency;
             options.PersistDataProtectionKeysToStorage = storageOptions.PersistDataProtectionKeysToStorage;
             options.DataProtectionApplicationName = storageOptions.DataProtectionApplicationName;
             options.ConfigureDataProtection = storageOptions.ConfigureDataProtection;
             options.ConfigureModel = storageOptions.ConfigureModel;
         });
-
-        services.AddDbContext<RuntimeDbContext>(options =>
+        // EF pooling reuses metadata, internal services and change-tracking buffers.
+        // It does not cap concurrency: once the pool is empty EF creates another
+        // context and returns it normally when the activation completes.
+        services.AddDbContextPool<RuntimeDbContext>((provider, options) =>
         {
             configureDbContext(options);
+            options.UseKrackendRuntimeStorage(
+                storageOptions,
+                provider.GetRequiredService<RuntimeMutationLeaseScope>());
+            options.AddInterceptors(
+                provider.GetRequiredService<RuntimeSqlServerDurableLogFlushInterceptor>());
             options.ReplaceService<IModelCacheKeyFactory, RuntimeEntityFrameworkModelCacheKeyFactory>();
         });
         var dataProtection = services.AddDataProtection();

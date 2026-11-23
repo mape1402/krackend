@@ -44,7 +44,9 @@ internal sealed class RuntimeAcceptanceHarness : IDisposable
         services.AddLogging();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddKrackendOrchestrationsRuntime();
-        services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, RecordingRemoteCommandDispatcher>());
+        // Dispatch activation intentionally runs in an isolated scope after the state
+        // commit. Keep the recorder shared so the harness observes those publications.
+        services.Replace(ServiceDescriptor.Singleton<IRemoteCommandDispatcher, RecordingRemoteCommandDispatcher>());
         services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RepositoryBackedIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RepositoryBackedIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Singleton<IMessagingIngressAdapter>(ingressAdapter));

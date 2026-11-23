@@ -13,6 +13,9 @@ public sealed class MuleTaskDispatchCancellationService : ITaskDispatchCancellat
     private const string MuleActionIdMetadataKey = "Mule.ActionId";
     private const string ReplayActionIdMetadataKey = "Recovery.DispatchReplayProviderActionId";
     private const string ReplayRequestIdMetadataKey = "Recovery.DispatchReplayRequestId";
+    private const string DeliveryCommandMetadataKey = "Runtime.Delivery.Command";
+    private const string CancellationSourceStatusMetadataKey = "Recovery.DispatchCancellationSourceStatus";
+    private const int MissingActionTerminalAttemptCount = 12;
 
     private readonly IMuleCancellationService _cancellationService;
     private readonly Func<IMuleReplayService> _replayService;
@@ -51,6 +54,33 @@ public sealed class MuleTaskDispatchCancellationService : ITaskDispatchCancellat
         var actionId = await ResolveActionIdAsync(request.Dispatch, cancellationToken);
         if (actionId is null)
         {
+            // The healthy realtime path publishes directly and deliberately never
+            // creates a Mule action. Its persisted command snapshot is still the
+            // recovery intent, but there is no physical Mule work to cancel after
+            // publication. Treat that absence as terminal instead of polling Mule
+            // forever for an action id that cannot exist. If direct publication
+            // failed and recovery materialized an action, ResolveActionIdAsync
+            // above finds that action and the normal cancellation path still wins.
+            if (IsPreparedDirectDispatch(request.Dispatch))
+            {
+                return TaskDispatchCancellationResult.LogicalOnly(
+                    "DirectDispatchLogicalFence",
+                    $"Dispatch '{request.Dispatch.Id}' used direct publication; no durable Mule action remains to cancel.");
+            }
+
+            // Legacy dispatches predate the direct-publication marker. Once Mule
+            // storage has repeatedly confirmed that no action exists, continuing
+            // every few seconds can never improve the fence and only creates an
+            // unbounded recovery/write loop. Replay reservations are excluded:
+            // their provider action can legitimately be materialized later.
+            if (!IsReplayPending(request.Dispatch) &&
+                request.Dispatch.PhysicalCancellationAttemptCount >= MissingActionTerminalAttemptCount)
+            {
+                return TaskDispatchCancellationResult.LogicalOnly(
+                    "ActionReferenceUnavailable",
+                    $"No durable Mule action exists for dispatch '{request.Dispatch.Id}' after repeated reconciliation; the logical fence remains active.");
+            }
+
             return TaskDispatchCancellationResult.Deferred(
                 "ActionReferencePending",
                 $"Mule action reference for dispatch '{request.Dispatch.Id}' is not durable yet.");
@@ -123,6 +153,38 @@ public sealed class MuleTaskDispatchCancellationService : ITaskDispatchCancellat
 
         dispatch.Metadata[MuleActionIdMetadataKey] = JsonValue.Create(storedActionId.Value.ToString());
         return storedActionId;
+    }
+
+    private static bool IsPreparedDirectDispatch(TaskDispatch dispatch)
+    {
+        if (!dispatch.Metadata.TryGetValue(DeliveryCommandMetadataKey, out var command) || command is not JsonObject commandObject)
+        {
+            return false;
+        }
+
+        return TryReadBoolean(commandObject, "isPreparedDirectActivation") ||
+               TryReadBoolean(commandObject, "IsPreparedDirectActivation");
+    }
+
+    private static bool IsReplayPending(TaskDispatch dispatch)
+        => dispatch.Metadata.TryGetValue(CancellationSourceStatusMetadataKey, out var sourceStatus) &&
+           string.Equals(sourceStatus?.ToString(), "ReplayPending", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryReadBoolean(JsonObject value, string propertyName)
+    {
+        if (!value.TryGetPropertyValue(propertyName, out var property) || property is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return property.GetValue<bool>();
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static bool TryReadUlid(

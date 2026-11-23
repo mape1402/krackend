@@ -12,7 +12,7 @@ using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 {
-    internal class DecisionControl : IDecisionControl
+    internal class DecisionControl : IDecisionControl, IOrchestrationDecisionStateLifecycle
     {
         private const string BranchNextStageIdMetadataKey = "Branch.NextStageId";
         private const string CompensationTerminalFailureMetadataKey = "Compensation.TerminalFailure";
@@ -24,6 +24,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
         private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IOrchestrationPayloadState _payloadState;
+        private readonly OrchestrationDecisionStateCache _stateCache;
+        private readonly Dictionary<Id, OrchestrationDecisionState> _activationStates = [];
 
         public DecisionControl(
             IRuntimeArtifactResolver artifactResolver,
@@ -32,7 +34,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             ITaskExecutionRepository taskRepository,
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
-            IOrchestrationPayloadState payloadState)
+            IOrchestrationPayloadState payloadState,
+            OrchestrationDecisionStateCache stateCache = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -41,6 +44,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+            _stateCache = stateCache;
+        }
+
+        public void CommitActivation()
+        {
+            if (_stateCache?.Enabled != true)
+                return;
+
+            foreach (var state in _activationStates.Values)
+                _stateCache.Store(state);
+            _activationStates.Clear();
+        }
+
+        public void AbortActivation()
+        {
+            if (_stateCache?.Enabled != true)
+                return;
+
+            foreach (var instanceId in _activationStates.Keys)
+                _stateCache.Discard(instanceId);
+            _activationStates.Clear();
         }
 
         public async Task<IReadOnlyCollection<IDecision>> DecideAsync(DecisionRequest request, CancellationToken cancellationToken)
@@ -63,7 +87,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             var instanceId = RuntimeIdParser.Parse(request.MessageMetadata.OrchestrationInstanceId);
-            var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            OrchestrationDecisionState state;
+            if (request.PreparedInstance?.Id == instanceId)
+            {
+                state = GetOrAddState(request.PreparedInstance);
+                // PreparedInstance is supplied only by the just-created promotion path.
+                // No stage row can predate it, so avoid a guaranteed-empty SQL query.
+                if (!state.StagesLoaded)
+                    state.SetStages(Array.Empty<StageExecution>());
+            }
+            else
+            {
+                state = await GetOrLoadStateAsync(instanceId, cancellationToken);
+            }
+            var instance = state.Instance;
             if (instance.Status == OrchestrationInstanceStatus.Compensating)
             {
                 return [new CompensateInstanceDecision(
@@ -74,6 +111,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             if (instance.Status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Idle
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensated
                 or OrchestrationInstanceStatus.Aborted)
@@ -91,11 +129,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 .OrderBy(x => x.Order)
                 .ToArray();
             var metadataDescriptors = resolvedArtifact.Artifact.MetadataDescriptors ?? Array.Empty<MetadataDescriptorArtifact>();
-            var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
+            if (!state.StagesLoaded)
+            {
+                state.SetStages(await _stageRepository.GetByInstanceId(instance.Id, cancellationToken));
+            }
+
+            var stageExecutions = state.StageExecutions;
             var currentStage = ResolveCurrentStage(stages, stageExecutions, instance);
             if (currentStage is null)
             {
-                return [new CompleteInstanceDecision(instance.Id)];
+                return [new CompleteInstanceDecision(instance.Id) { Instance = instance, State = state }];
             }
 
             var currentStageExecution = stageExecutions.FirstOrDefault(x => x.StageKey == currentStage.Key);
@@ -103,6 +146,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             {
                 return [new StartStageDecision(instance.Id, currentStage, request.Payload?.ToJsonString())
                 {
+                    Instance = instance,
+                    State = state,
                     MetadataDescriptors = metadataDescriptors
                 }];
             }
@@ -111,9 +156,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 .Where(x => x.IsEnabled)
                 .OrderBy(x => x.Order)
                 .ToArray();
-            var taskExecutions = (await _taskRepository.GetByInstanceId(instance.Id, cancellationToken))
-                .Where(x => x.StageExecutionId == currentStageExecution.Id)
-                .ToArray();
+            if (!state.TryGetTasks(currentStageExecution.Id, out var taskExecutions))
+            {
+                taskExecutions = (_taskRepository is ITaskExecutionStageReader stageReader
+                        ? await stageReader.GetByStageExecutionId(currentStageExecution.Id, cancellationToken)
+                        : await _taskRepository.GetByInstanceId(instance.Id, cancellationToken))
+                    .Where(x => x.StageExecutionId == currentStageExecution.Id)
+                    .ToArray();
+                state.SetTasks(currentStageExecution.Id, taskExecutions);
+            }
             var dispatchPayload = _payloadState.GetDispatchPayload(instance, request.Payload);
 
             var failedTasks = taskExecutions.Where(x =>
@@ -171,6 +222,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                         return unstarted.Take(limit).Select(task => (IDecision)new DispatchTaskDecision(
                             instance.Id, currentStageExecution.Id, currentStage.Key, task, serializedPayload)
                         {
+                            Instance = instance,
+                            State = state,
                             MetadataDescriptors = metadataDescriptors,
                             OrchestrationExecutionPolicy = resolvedArtifact.Artifact.ExecutionPolicy,
                             StageExecutionPolicy = currentStage.ExecutionPolicy
@@ -183,7 +236,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 if (failedTask is null)
                 {
                     if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying or TaskExecutionStatus.Pending or TaskExecutionStatus.Cancelled)) return [];
-                    return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions,
+                    return BuildNextTaskDecisions(instance, state, stages, currentStage, currentStageExecution, tasks, taskExecutions,
                         dispatchPayload, metadataDescriptors, resolvedArtifact.Artifact.ExecutionPolicy);
                 }
                 var failedArtifact = tasksByKey[failedTask.TaskKey].FirstOrDefault();
@@ -221,6 +274,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             return BuildNextTaskDecisions(
                 instance,
+                state,
                 stages,
                 currentStage,
                 currentStageExecution,
@@ -269,6 +323,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
         private static IReadOnlyCollection<IDecision> BuildNextTaskDecisions(
             OrchestrationInstance instance,
+            OrchestrationDecisionState state,
             IReadOnlyCollection<StageArtifact> stages,
             StageArtifact currentStage,
             StageExecution currentStageExecution,
@@ -284,6 +339,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             {
                 return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
                 {
+                    Instance = instance,
+                    State = state,
+                    StageExecution = currentStageExecution,
                     MetadataDescriptors = metadataDescriptors
                 }];
             }
@@ -297,6 +355,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     nextTask,
                     dispatchPayload?.ToJsonString())
                 {
+                    Instance = instance,
+                    State = state,
                     MetadataDescriptors = metadataDescriptors,
                     OrchestrationExecutionPolicy = orchestrationExecutionPolicy,
                     StageExecutionPolicy = currentStage.ExecutionPolicy
@@ -314,6 +374,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             if (groupTasks.Length == 0)
                 return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
                 {
+                    Instance = instance,
+                    State = state,
+                    StageExecution = currentStageExecution,
                     MetadataDescriptors = metadataDescriptors
                 }];
 
@@ -325,6 +388,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     task,
                     serializedPayload)
                 {
+                    Instance = instance,
+                    State = state,
                     MetadataDescriptors = metadataDescriptors,
                     OrchestrationExecutionPolicy = orchestrationExecutionPolicy,
                     StageExecutionPolicy = currentStage.ExecutionPolicy
@@ -518,14 +583,73 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             TaskDispatch dispatch;
             TaskExecutionAttempt attempt;
             OrchestrationInstance instance;
+            StageExecution stage = null;
+            OrchestrationExecutionGraph executionGraph = null;
             try
             {
-                instance = await _instanceRepository.GetById(instanceId, cancellationToken);
-                task = await _taskRepository.GetById(taskExecutionId, cancellationToken);
-                dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
-                attempt = await _attemptRepository.GetByDispatchId(dispatchId, cancellationToken);
+                if (TryTakeCachedState(instanceId, out var cachedState) &&
+                    cachedState.TryGetTask(taskExecutionId, out var cachedTask) &&
+                    cachedState.TryGetStage(cachedTask.StageExecutionId, out var cachedStage) &&
+                    _dispatchRepository is ITaskDispatchCachedExecutionStateReader cachedStateReader &&
+                    cachedStateReader.TryReadCachedExecutionState(
+                        cachedState.Instance,
+                        cachedTask,
+                        cachedStage,
+                        out var cachedExecutionState) &&
+                    cachedExecutionState.Dispatch.Id == dispatchId)
+                {
+                    RuntimeConcurrencyMetrics.CallbackStateCacheHits.Add(1);
+                    instance = cachedExecutionState.Instance;
+                    task = cachedExecutionState.Task;
+                    attempt = cachedExecutionState.Attempt;
+                    dispatch = cachedExecutionState.Dispatch;
+                    stage = cachedExecutionState.Stage;
+                }
+                else if (_dispatchRepository is ITaskDispatchCallbackExecutionStateReader callbackStateReader)
+                {
+                    RuntimeConcurrencyMetrics.CallbackStateCacheMisses.Add(1);
+                    // An incomplete cached projection is never mixed with a storage
+                    // snapshot. Drop it and let the provider return one authoritative graph.
+                    _activationStates.Remove(instanceId);
+                    var callbackState = await callbackStateReader.GetCallbackExecutionState(dispatchId, cancellationToken);
+                    instance = callbackState.ExecutionState.Instance;
+                    task = callbackState.ExecutionState.Task;
+                    attempt = callbackState.ExecutionState.Attempt;
+                    dispatch = callbackState.ExecutionState.Dispatch;
+                    stage = callbackState.ExecutionState.Stage;
+                    executionGraph = callbackState.ExecutionGraph;
+                }
+                else if (_dispatchRepository is ITaskDispatchExecutionStateReader stateReader)
+                {
+                    var executionState = await stateReader.GetExecutionState(dispatchId, cancellationToken);
+                    instance = executionState.Instance;
+                    task = executionState.Task;
+                    attempt = executionState.Attempt;
+                    dispatch = executionState.Dispatch;
+                    stage = executionState.Stage;
+                }
+                else
+                {
+                    instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+                    task = await _taskRepository.GetById(taskExecutionId, cancellationToken);
+                    dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
+                    attempt = await _attemptRepository.GetByDispatchId(dispatchId, cancellationToken);
+                }
             }
             catch (KeyNotFoundException)
+            {
+                return null;
+            }
+
+            // A physical callback consumer can receive messages for more than one
+            // deployed artifact. The dispatch id is the efficient lookup key, but it
+            // must not be allowed to override the artifact and task identity carried
+            // by the message. Validate the joined state before any callback mutation;
+            // this keeps the direct healthy path to one read without weakening the
+            // same identity fence that durable receipt intake applies.
+            if (!TryParseId(request.ArtifactId, out var artifactId) ||
+                instance.RuntimeOrchestrationArtifactId != artifactId ||
+                task.Id != taskExecutionId)
             {
                 return null;
             }
@@ -551,13 +675,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
+            // The callback handler mutates these same entity objects before the next
+            // decision cycle. Hydrate the complete current-stage view now so that
+            // callback -> stage completion -> next dispatch can be decided without an
+            // intermediate SaveChanges merely to make the mutation query-visible.
+            await HydrateCallbackDecisionStateAsync(instance, task, executionGraph, cancellationToken);
+
             if (cancelledParallelResult)
-                return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+                return BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, stage);
 
             if (IsCallbackResolved(task, attempt, dispatch))
             {
                 if (IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata))
-                    return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+                    return BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, stage);
 
                 // A durable callback may be replayed after its state transaction committed but
                 // before the engine advanced. Only resume the exact already-committed result.
@@ -568,7 +698,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     attempt.Status == TaskExecutionStatus.Failed &&
                     string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase);
                 return instance.Status == OrchestrationInstanceStatus.Running && (committedSuccess || committedFailure)
-                    ? BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId) with { ResumeOnly = true }
+                    ? BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, stage) with { ResumeOnly = true }
                     : null;
             }
 
@@ -576,28 +706,133 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             {
                 if (IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata))
                 {
-                    return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+                    return BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, stage);
                 }
 
-                throw new InvalidOperationException(
+                throw new Coordination.OrchestrationCallbackNotReadyException(
                     $"Backchannel callback for dispatch '{dispatchId}' arrived before runtime state was ready. " +
                     $"Task='{task.Status}', Attempt='{attempt.Status}', Dispatch='{dispatch.DispatchStatus}'.");
             }
 
-            return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+            return BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, stage);
         }
 
-        private static CompleteCallbackDecision BuildCompleteCallbackDecision(
+        private async Task HydrateCallbackDecisionStateAsync(
+            OrchestrationInstance instance,
+            TaskExecution callbackTask,
+            OrchestrationExecutionGraph executionGraph,
+            CancellationToken cancellationToken)
+        {
+            var state = GetOrAddState(instance);
+            if (executionGraph is not null)
+            {
+                state.SetStages(executionGraph.Stages);
+                state.SetTasks(callbackTask.StageExecutionId, executionGraph.StageTasks);
+                state.TrackTask(callbackTask);
+                return;
+            }
+
+            if (_stageRepository is IOrchestrationExecutionGraphReader graphReader &&
+                (!state.StagesLoaded || !state.TryGetTasks(callbackTask.StageExecutionId, out _)))
+            {
+                var graph = await graphReader.GetExecutionGraph(
+                    instance.Id,
+                    callbackTask.StageExecutionId,
+                    cancellationToken);
+                state.SetStages(graph.Stages);
+                state.SetTasks(callbackTask.StageExecutionId, graph.StageTasks);
+                state.TrackTask(callbackTask);
+                return;
+            }
+
+            if (!state.StagesLoaded)
+                state.SetStages(await _stageRepository.GetByInstanceId(instance.Id, cancellationToken));
+
+            if (!state.TryGetTasks(callbackTask.StageExecutionId, out _))
+            {
+                var tasks = _taskRepository is ITaskExecutionStageReader stageReader
+                    ? await stageReader.GetByStageExecutionId(callbackTask.StageExecutionId, cancellationToken)
+                    : (await _taskRepository.GetByInstanceId(instance.Id, cancellationToken))
+                        .Where(candidate => candidate.StageExecutionId == callbackTask.StageExecutionId)
+                        .ToArray();
+                state.SetTasks(callbackTask.StageExecutionId, tasks);
+            }
+
+            state.TrackTask(callbackTask);
+        }
+
+        private CompleteCallbackDecision BuildCompleteCallbackDecision(
             DecisionRequest request,
-            Id instanceId,
-            Id taskExecutionId,
-            Id dispatchId)
-            => new(
-                instanceId,
-                taskExecutionId,
-                dispatchId,
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch)
+            => BuildCompleteCallbackDecision(request, instance, task, attempt, dispatch, null);
+
+        private CompleteCallbackDecision BuildCompleteCallbackDecision(
+            DecisionRequest request,
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            StageExecution stage)
+        {
+            var state = GetOrAddState(instance);
+            state.TrackTask(task);
+            return new CompleteCallbackDecision(
+                instance.Id,
+                task.Id,
+                dispatch.Id,
                 request.Payload?.ToJsonString(),
-                request.ExecutionResultMetadata);
+                request.ExecutionResultMetadata)
+            {
+                Instance = instance,
+                State = state,
+                TaskExecution = task,
+                Attempt = attempt,
+                Dispatch = dispatch,
+                StageExecution = stage
+            };
+        }
+
+        private async Task<OrchestrationDecisionState> GetOrLoadStateAsync(
+            Id instanceId,
+            CancellationToken cancellationToken)
+        {
+            if (_activationStates.TryGetValue(instanceId, out var existing))
+            {
+                return existing;
+            }
+
+            if (TryTakeCachedState(instanceId, out existing))
+                return existing;
+
+            var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            return GetOrAddState(instance);
+        }
+
+        private bool TryTakeCachedState(Id instanceId, out OrchestrationDecisionState state)
+        {
+            if (_activationStates.TryGetValue(instanceId, out state))
+                return true;
+            if (_stateCache is null || !_stateCache.TryTake(instanceId, out state))
+                return false;
+
+            _activationStates.Add(instanceId, state);
+            return true;
+        }
+
+        private OrchestrationDecisionState GetOrAddState(OrchestrationInstance instance)
+        {
+            if (_activationStates.TryGetValue(instance.Id, out var existing))
+            {
+                return existing;
+            }
+
+            var state = new OrchestrationDecisionState(instance);
+            _activationStates.Add(instance.Id, state);
+            return state;
+        }
 
         private static bool TryParseId(string value, out Id id)
         {
@@ -625,7 +860,30 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             TaskDispatch dispatch)
             => task.Status == TaskExecutionStatus.WaitingResponse &&
                 attempt.Status == TaskExecutionStatus.WaitingResponse &&
-                string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase);
+               string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) ||
+               HasDurablePreConfirmationCallback(task, attempt, dispatch);
+
+        private static bool HasDurablePreConfirmationCallback(
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch)
+            => dispatch.CallbackPending &&
+               !string.IsNullOrWhiteSpace(dispatch.CallbackReceiptId) &&
+               IsPublicationCandidate(task.Status, attempt.Status) &&
+               IsDispatchAwaitingPublicationConfirmation(dispatch.DispatchStatus);
+
+        private static bool IsPublicationCandidate(
+            TaskExecutionStatus taskStatus,
+            TaskExecutionStatus attemptStatus)
+            => taskStatus == TaskExecutionStatus.Running && attemptStatus == TaskExecutionStatus.Running ||
+               taskStatus == TaskExecutionStatus.WaitingResponse && attemptStatus == TaskExecutionStatus.WaitingResponse;
+
+        private static bool IsDispatchAwaitingPublicationConfirmation(string status)
+            => string.Equals(status, "QueuePending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "RetryPending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "ReplayPending", StringComparison.OrdinalIgnoreCase);
 
         internal static bool IsCancelledParallelCallback(OrchestrationInstance instance, TaskExecution task,
             TaskExecutionAttempt attempt, TaskDispatch dispatch)

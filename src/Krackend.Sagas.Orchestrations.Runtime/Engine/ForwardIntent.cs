@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
@@ -9,6 +10,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
     /// </summary>
     public class ForwardIntent
     {
+        /// <summary>Gets whether this operation may wait for a busy instance lease.</summary>
+        public bool WaitForInstanceLease { get; init; } = true;
+
         /// <summary>
         /// Gets the runtime artifact id used to resolve the orchestration definition.
         /// </summary>
@@ -38,5 +42,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         /// Gets the execution result metadata received with the callback.
         /// </summary>
         public OrchestrationExecutionResultMetadata ExecutionResultMetadata { get; init; }
+
+        /// <summary>
+        /// Gets the newly promoted instance before the atomic start activation is committed.
+        /// </summary>
+        internal OrchestrationInstance PreparedInstance { get; init; }
     }
 }

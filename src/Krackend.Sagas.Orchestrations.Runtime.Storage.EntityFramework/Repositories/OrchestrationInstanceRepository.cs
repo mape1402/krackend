@@ -3,16 +3,25 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Data;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IAtomicStartIdempotencyRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
 {
     private static readonly ConcurrentDictionary<string, bool> ProvidersWithoutStatusGrouping = new();
-    public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
+    private readonly bool _persistStatisticsObservations;
+
+    public OrchestrationInstanceRepository(
+        RuntimeDbContext dbContext,
+        IRuntimeStorageUnitOfWork unitOfWork,
+        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null)
         : base(dbContext, unitOfWork)
     {
+        _persistStatisticsObservations = storageOptions?.Value.PersistStatisticsObservations ?? true;
     }
 
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
@@ -20,26 +29,48 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         instance.CaptureLastExecutionCursor();
         instance.StatisticsRevision = 1;
         DbContext.OrchestrationInstances.Add(instance);
-        AddStatisticsObservation(instance, false);
+        if (_persistStatisticsObservations)
+            AddStatisticsObservation(instance, false);
         await SaveChanges(cancellationToken);
+        instance.MarkStatisticsStatusObserved();
     }
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
         instance.CaptureLastExecutionCursor();
+        var statusChanged = instance.HasUnobservedStatisticsStatusChange();
         var existing = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instance.Id);
         var originalRevision = ReferenceEquals(existing, instance)
             ? DbContext.Entry(existing).Property(x => x.StatisticsRevision).OriginalValue
             : instance.StatisticsRevision;
         instance.StatisticsRevision = Math.Max(instance.StatisticsRevision, existing?.StatisticsRevision ?? 0) + 1;
-        DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
-        DbContext.OrchestrationInstances.Update(instance);
+        if (DbContext.Entry(instance).State == EntityState.Detached)
+        {
+            DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
+            DbContext.OrchestrationInstances.Update(instance);
+            // Cached decision state is intentionally detached from the request scope.
+            // Update() otherwise sends every column back to SQL, including large stable
+            // identity strings, on every callback. Keep the aggregate's immutable
+            // identity out of the hot UPDATE while all lifecycle fields remain tracked.
+            var detachedEntry = DbContext.Entry(instance);
+            detachedEntry.Property(x => x.OrchestrationDefinitionKey).IsModified = false;
+            detachedEntry.Property(x => x.RuntimeOrchestrationArtifactId).IsModified = false;
+            detachedEntry.Property(x => x.TriggerIntakeId).IsModified = false;
+            detachedEntry.Property(x => x.StartIdempotencyKey).IsModified = false;
+            detachedEntry.Property(x => x.CorrelationId).IsModified = false;
+            detachedEntry.Property(x => x.SagaId).IsModified = false;
+            detachedEntry.Property(x => x.ExecutionKey).IsModified = false;
+            detachedEntry.Property(x => x.StartedOnUtc).IsModified = false;
+        }
         var entry = DbContext.Entry(instance);
         entry.Property(x => x.StatisticsRevision).OriginalValue = originalRevision;
         entry.Property(x => x.ActiveLeaseId).IsModified = false;
         entry.Property(x => x.ActiveLeaseExpiresOnUtc).IsModified = false;
-        AddStatisticsObservation(instance, originalRevision == 0 && instance.StatisticsRevision == 1);
+        if (statusChanged && _persistStatisticsObservations)
+            AddStatisticsObservation(instance, originalRevision == 0 && instance.StatisticsRevision == 1);
         await SaveChanges(cancellationToken);
+        if (statusChanged)
+            instance.MarkStatisticsStatusObserved();
     }
 
     private void AddStatisticsObservation(OrchestrationInstance instance, bool isBackfill)
@@ -79,6 +110,15 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
+        var transactionLockResult = await TryAcquireSqlServerTransactionLock(
+            instanceId, leaseId, cancellationToken);
+        if (transactionLockResult.HasValue)
+        {
+            return transactionLockResult.Value
+                ? new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc)
+                : null;
+        }
+
         var affected = await DbContext.OrchestrationInstances
             .Where(x => x.Id == instanceId &&
                 (x.ActiveLeaseId == null || x.ActiveLeaseId == string.Empty || x.ActiveLeaseId == leaseId ||
@@ -86,7 +126,14 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .ExecuteUpdateAsync(updates => updates
                 .SetProperty(x => x.ActiveLeaseId, leaseId)
                 .SetProperty(x => x.ActiveLeaseExpiresOnUtc, expiresOnUtc), cancellationToken);
-        if (affected == 1) return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
+        if (affected == 1)
+        {
+            // The conditional acquisition already fenced and locked this instance in
+            // the current activation transaction. Let SaveChanges reuse that guard
+            // instead of issuing the same conditional UPDATE again.
+            DbContext.MarkMutationLeaseGuarded(instanceId, leaseId);
+            return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
+        }
 
         // Some providers report modified rather than matched rows. A repeated
         // renewal with the same expiry may therefore report zero changes.
@@ -96,17 +143,98 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
         if (string.Equals(current.ActiveLeaseId, leaseId, StringComparison.Ordinal) && current.ActiveLeaseExpiresOnUtc > nowUtc)
+        {
+            DbContext.MarkMutationLeaseGuarded(instanceId, leaseId);
             return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, current.ActiveLeaseExpiresOnUtc.Value);
+        }
         return null;
     }
 
     public async Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
     {
+        if (DbContext.IsGuardedByTransactionLock(instanceId, leaseId))
+        {
+            // SQL Server releases transaction-owned application locks automatically on
+            // commit or rollback. Keeping it until then fences the complete mutation.
+            return;
+        }
+
+        // Coordinated engine mutations already hold the instance row lock and finish
+        // with one SaveChanges. If that instance is tracked, fold lease release into
+        // the functional instance UPDATE instead of issuing a second UPDATE against
+        // the same row immediately before the flush. Standalone callers still require
+        // the immediate conditional update below.
+        if (DbContext.Database.CurrentTransaction is not null)
+        {
+            var tracked = DbContext.OrchestrationInstances.Local.FirstOrDefault(x =>
+                x.Id == instanceId && string.Equals(x.ActiveLeaseId, leaseId, StringComparison.Ordinal));
+            if (tracked is not null)
+            {
+                tracked.ActiveLeaseId = null;
+                tracked.ActiveLeaseExpiresOnUtc = null;
+                var entry = DbContext.Entry(tracked);
+                entry.Property(x => x.ActiveLeaseId).IsModified = true;
+                entry.Property(x => x.ActiveLeaseExpiresOnUtc).IsModified = true;
+                return;
+            }
+        }
+
         await DbContext.OrchestrationInstances
             .Where(x => x.Id == instanceId && x.ActiveLeaseId == leaseId)
             .ExecuteUpdateAsync(updates => updates
                 .SetProperty(x => x.ActiveLeaseId, (string)null)
                 .SetProperty(x => x.ActiveLeaseExpiresOnUtc, (DateTime?)null), cancellationToken);
+    }
+
+    private async Task<bool?> TryAcquireSqlServerTransactionLock(
+        Id instanceId,
+        string leaseId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                DbContext.Database.ProviderName,
+                "Microsoft.EntityFrameworkCore.SqlServer",
+                StringComparison.Ordinal) ||
+            DbContext.Database.CurrentTransaction is null)
+        {
+            return null;
+        }
+
+        var connection = DbContext.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = DbContext.Database.CurrentTransaction.GetDbTransaction();
+        command.CommandType = CommandType.Text;
+        command.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = 0,
+                @DbPrincipal = N'public';
+            SELECT @result;
+            """;
+        var resource = command.CreateParameter();
+        resource.ParameterName = "@resource";
+        resource.DbType = DbType.String;
+        resource.Size = 255;
+        resource.Value = $"Krackend:OrchestrationInstance:{instanceId}";
+        command.Parameters.Add(resource);
+
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        var result = Convert.ToInt32(scalar, System.Globalization.CultureInfo.InvariantCulture);
+        if (result >= 0)
+        {
+            DbContext.MarkMutationLeaseGuarded(
+                instanceId, leaseId, guardedByTransactionLock: true);
+            return true;
+        }
+
+        if (result is -1 or -2 or -3)
+            return false;
+
+        throw new InvalidOperationException(
+            $"SQL Server could not acquire the orchestration transaction lock for '{instanceId}' (result {result}).");
     }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)

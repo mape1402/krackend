@@ -1,0 +1,10 @@
+<Solution>
+<Project Path="Sales/src/Sales.Api/Sales.Api.csproj" />
+<Project Path="Inventories/src/Inventories.Api/Inventories.Api.csproj" />
+<Project Path="Payments/src/Payments.Api/Payments.Api.csproj" />
+<Project Path="Email/Email.Api.csproj" />
+<Project Path="Demo.ServiceKit/Demo.ServiceKit.csproj" />
+<Project Path="Demo.RuntimeHost/Demo.RuntimeHost.csproj" />
+<Project Path="Demo.Verification/Demo.Verification.csproj" />
+</Solution>
+

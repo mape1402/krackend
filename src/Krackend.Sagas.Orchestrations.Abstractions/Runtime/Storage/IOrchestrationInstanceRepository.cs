@@ -49,6 +49,15 @@ public interface IOrchestrationInstanceRepository
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Indicates that instance creation and start-idempotency uniqueness are committed
+/// atomically by the backing store. Callers may optimistically insert and resolve the
+/// rare uniqueness conflict instead of issuing a guaranteed-miss preflight read.
+/// </summary>
+public interface IAtomicStartIdempotencyRepository
+{
+}
+
 public sealed record RuntimeInstanceSummary(
     int Active,
     int Waiting,

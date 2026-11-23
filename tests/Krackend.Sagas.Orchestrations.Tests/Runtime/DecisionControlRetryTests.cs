@@ -420,6 +420,26 @@ public sealed class DecisionControlRetryTests
             CreateTaskExecution(TaskExecutionStatus.Running),
             waitingAttempt,
             waitingDispatch));
+        var earlyTask = CreateTaskExecution(TaskExecutionStatus.Running);
+        var earlyAttempt = new TaskExecutionAttempt { Status = TaskExecutionStatus.Running };
+        var earlyDispatch = new TaskDispatch
+        {
+            DispatchStatus = "Enqueued",
+            DispatchType = "messaging",
+            CallbackReceiptId = "receipt-early",
+            CallbackPending = true
+        };
+        Assert.True(InvokeDecisionControlPrivateStatic<bool>(
+            "IsCallbackReady",
+            earlyTask,
+            earlyAttempt,
+            earlyDispatch));
+        earlyDispatch.CallbackPending = false;
+        Assert.False(InvokeDecisionControlPrivateStatic<bool>(
+            "IsCallbackReady",
+            earlyTask,
+            earlyAttempt,
+            earlyDispatch));
         Assert.False(InvokeDecisionControlPrivateStatic<bool>("IsCallbackResolved", waitingTask, waitingAttempt, waitingDispatch));
         Assert.True(InvokeDecisionControlPrivateStatic<bool>("IsCallbackResolved", completedTask, waitingAttempt, waitingDispatch));
         Assert.True(InvokeDecisionControlPrivateStatic<bool>("IsCallbackResolved", waitingTask, failedAttempt, waitingDispatch));

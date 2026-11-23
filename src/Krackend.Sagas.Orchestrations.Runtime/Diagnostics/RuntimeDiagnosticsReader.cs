@@ -643,7 +643,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             dispatch.AcknowledgedOnUtc,
             dispatch.FailedOnUtc,
             dispatch.FailureReason,
-            FormatJson(dispatch.RequestPayload),
+            FormatJson(dispatch.RequestPayload ?? attempt.RequestPayload),
             FormatJson(BuildDispatchMetadata(dispatch, instance, task, attempt, stageById)),
             dispatch.TaskExecutionAttemptId.ToString())
         {

@@ -50,17 +50,17 @@ public sealed class SagaStatisticsProjectorTests
     }
 
     [Fact]
-    public void DuplicateAndOutOfOrderEntriesDoNotChangeTheProjection()
+    public void DuplicateEntriesAreIgnoredAndLaterStatusRevisionsCanSkipInternalMutations()
     {
         var first = _projector.Project(null, Event(1, OrchestrationInstanceStatus.Created));
         var duplicate = _projector.Project(first.Snapshot, Event(1, OrchestrationInstanceStatus.Created));
-        var gap = _projector.Project(first.Snapshot, Event(3, OrchestrationInstanceStatus.Completed));
+        var later = _projector.Project(first.Snapshot, Event(3, OrchestrationInstanceStatus.Completed));
         Assert.Equal(SagaStatisticsProjectionDisposition.Duplicate, duplicate.Disposition);
-        Assert.Equal(SagaStatisticsProjectionDisposition.Gap, gap.Disposition);
+        Assert.Equal(SagaStatisticsProjectionDisposition.Applied, later.Disposition);
         Assert.Same(first.Snapshot, duplicate.Snapshot);
-        Assert.Same(first.Snapshot, gap.Snapshot);
+        Assert.Equal(3, later.Snapshot.Revision);
+        Assert.Equal(OrchestrationInstanceStatus.Completed, later.Snapshot.Status);
         Assert.Empty(duplicate.CurrentStatusDeltas);
-        Assert.Empty(gap.CurrentStatusDeltas);
         Assert.Equal(SagaStatisticsProjectionDisposition.Gap, _projector.Project(null, Event(2, OrchestrationInstanceStatus.Created)).Disposition);
     }
 

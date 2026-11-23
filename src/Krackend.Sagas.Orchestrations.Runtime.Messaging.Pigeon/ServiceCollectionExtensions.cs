@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using global::Pigeon.Messaging.Consuming.Management;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 {
@@ -72,10 +73,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 throw new ArgumentNullException(nameof(configurePigeon));
             }
 
-            var pigeonBuilder = builder.Services.AddPigeon(configuration, configure)
+            var pigeonBuilder = builder.Services.AddPigeon(configuration, pigeon =>
+                {
+                    // Runtime consumption replaces Pigeon's central Channel/worker pump
+                    // with DirectParallelConsumingManager below. Keep Pigeon's optional
+                    // queue and concurrency ceiling disabled as an explicit invariant.
+                    pigeon.ConfigureConsumerExecution(execution =>
+                    {
+                        execution.MaxConcurrency = null;
+                        execution.QueueCapacity = null;
+                    });
+                    configure(pigeon);
+                })
                 .AddConsumeInterceptor<KrackendConsumeInterceptor>()
                 .AddPublishInterceptor<KrackendPublishInterceptor>();
             configurePigeon(pigeonBuilder);
+
+            builder.Services.Replace(ServiceDescriptor.Singleton<IConsumingManager,
+                DirectParallelConsumingManager>());
 
             builder.Services.AddOptions<PigeonConsumerReadinessOptions>()
                 .Bind(configuration.GetSection("Runtime:Pigeon:ConsumerReadiness"));

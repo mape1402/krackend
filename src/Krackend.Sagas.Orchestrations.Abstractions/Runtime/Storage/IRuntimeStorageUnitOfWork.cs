@@ -6,6 +6,12 @@ namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 public interface IRuntimeStorageUnitOfWork
 {
     /// <summary>
+    /// Gets a value indicating whether a complete engine activation should share
+    /// one transaction. Single-writer stores can opt out to keep write locks short.
+    /// </summary>
+    bool PreferBatchedEngineActivations => true;
+
+    /// <summary>
     /// Gets a value indicating whether repositories should flush every mutation immediately.
     /// </summary>
     bool AutoSaveChanges { get; }

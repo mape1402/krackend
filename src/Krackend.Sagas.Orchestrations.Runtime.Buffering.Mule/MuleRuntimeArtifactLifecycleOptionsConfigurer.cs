@@ -29,17 +29,10 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        // Artifact projection is written as part of the runtime deployment transaction. Mule's polling recovery
-        // is deliberately retained here as the durable post-commit handoff: it also recovers a process that exits
-        // after the deployment transaction commits but before its local notification can be observed.
-        //
-        // This is not used as a throughput limiter. Projection and standup have isolated lanes with their own
-        // capacity budget, so command dispatch, replies and response deadlines remain independently schedulable.
-        options.RecoveryMode = MuleRecoveryMode.Polling;
-        if (options.DispatchInterval <= TimeSpan.Zero || options.DispatchInterval > TimeSpan.FromSeconds(5))
-        {
-            options.DispatchInterval = TimeSpan.FromSeconds(1);
-        }
+        // Projection and standup use immediate post-commit activation. Scheduled recovery
+        // restores abandoned work at startup and wakes for due retries without idle scans.
+        options.ImmediateDispatch = true;
+        options.RecoveryMode = MuleRecoveryMode.Scheduled;
 
         var defaults = KrackendMuleRuntimeCapacityProfile.Resolve(_runtimeOptions).Artifact;
         EnsureLane(options, RuntimeArtifactProjectionSchedulerDefaults.Lane, priority: 100, weight: 2, _runtimeOptions, defaults);
@@ -65,6 +58,9 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
             Weight = weight,
             WorkerCount = Math.Max(1, runtimeOptions.ArtifactLifecycleWorkerCount ?? defaults.WorkerCount),
             MaxDegreeOfParallelism = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxDegreeOfParallelism ?? defaults.MaxDegreeOfParallelism),
+            PollingInterval = runtimeOptions.RecoveryPollingInterval > TimeSpan.Zero
+                ? runtimeOptions.RecoveryPollingInterval
+                : TimeSpan.FromSeconds(30),
             DispatchBatchSize = Math.Max(1, runtimeOptions.ArtifactLifecycleDispatchBatchSize ?? defaults.DispatchBatchSize),
             DispatchQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleDispatchQueueCapacity ?? defaults.DispatchQueueCapacity),
             ExecutionQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleExecutionQueueCapacity ?? defaults.ExecutionQueueCapacity),

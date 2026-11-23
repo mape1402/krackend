@@ -88,7 +88,7 @@ internal sealed class EnterIdleInstanceDecisionHandler : IDecisionHandler<EnterI
             await _instances.Update(instance, token);
             await _transitions.Create(new ExecutionTransition
             {
-                Id = Id.New(),
+                Id = Id.NewDistributed(),
                 OrchestrationInstanceId = instance.Id,
                 StageExecutionId = decision.StageExecutionId,
                 TaskExecutionId = decision.TaskExecutionId,

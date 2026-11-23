@@ -10,7 +10,6 @@ public sealed class SignalRRuntimeReactiveEventPublisher : IRuntimeReactiveEvent
 {
     private readonly SignalRRuntimeReactiveEventQueue _queue;
     private readonly IRuntimeReactiveFanout _fanout;
-    private readonly ILogger<SignalRRuntimeReactiveEventPublisher> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SignalRRuntimeReactiveEventPublisher"/> class.
@@ -20,20 +19,20 @@ public sealed class SignalRRuntimeReactiveEventPublisher : IRuntimeReactiveEvent
     {
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _fanout = fanout;
-        _logger = logger;
     }
 
     /// <summary>
     /// Enqueues a runtime reactive event for SignalR delivery.
     /// </summary>
-    public async Task Publish(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default)
+    public Task Publish(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default)
     {
         if (eventData is null)
-            return;
+            return Task.CompletedTask;
 
         _queue.TryEnqueue(RuntimeReactiveEventMessage.From(eventData));
-        if (_fanout is null) return;
-        try { await _fanout.PublishAsync(eventData, cancellationToken); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Unable to distribute runtime event {EventId} to other replicas.", eventData.Id); }
+        // Optional diagnostics must not retain a saga lease while Redis is slow.
+        // Local SignalR delivery and remote fanout have independent bounded readers.
+        if (_fanout is not null) _queue.TryEnqueueFanout(eventData);
+        return Task.CompletedTask;
     }
 }

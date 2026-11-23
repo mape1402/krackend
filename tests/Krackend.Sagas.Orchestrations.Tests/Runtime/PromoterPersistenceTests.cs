@@ -68,6 +68,29 @@ public sealed class PromoterPersistenceTests
     }
 
     [Fact]
+    public async Task AtomicRepositoryStillRecognizesAnExistingStartBeforeTheBatchedSave()
+    {
+        var fixture = new PromotionFixture(atomicStartIdempotency: true);
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = fixture.ResolvedArtifact.RuntimeArtifact.Id,
+            OrchestrationDefinitionKey = "orders_created", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "orders:existing"
+        };
+        fixture.InstanceRepository.TryGetByStartIdempotencyKey("existing", Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+
+        var result = await fixture.Promoter.PromoteToInstanceAsync(new PromotionRequest
+        {
+            ArtifactId = fixture.ResolvedArtifact.RuntimeArtifact.Id.ToString(), StartIdempotencyKey = "existing"
+        });
+
+        Assert.True(result.Success);
+        Assert.True(result.AlreadyPromoted);
+        Assert.Equal(instance.Id.ToString(), result.InstanceId);
+        await fixture.InstanceRepository.DidNotReceiveWithAnyArgs().Create(default!, default);
+        Assert.Empty(fixture.Transitions);
+    }
+
+    [Fact]
     public async Task PromoteToInstancePersistsTheInstanceAndPromotionTransitionInOneStateTransaction()
     {
         var fixture = new PromotionFixture();
@@ -98,8 +121,11 @@ public sealed class PromoterPersistenceTests
 
     private sealed class PromotionFixture
     {
-        public PromotionFixture()
+        public PromotionFixture(bool atomicStartIdempotency = false)
         {
+            InstanceRepository = atomicStartIdempotency
+                ? Substitute.For<IOrchestrationInstanceRepository, IAtomicStartIdempotencyRepository>()
+                : Substitute.For<IOrchestrationInstanceRepository>();
             ArtifactResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(ResolvedArtifact));
             InstanceRepository.TryGetByStartIdempotencyKey(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -125,7 +151,7 @@ public sealed class PromoterPersistenceTests
 
         public IRuntimeArtifactResolver ArtifactResolver { get; } = Substitute.For<IRuntimeArtifactResolver>();
 
-        public IOrchestrationInstanceRepository InstanceRepository { get; } = Substitute.For<IOrchestrationInstanceRepository>();
+        public IOrchestrationInstanceRepository InstanceRepository { get; }
 
         public IExecutionTransitionRepository TransitionRepository { get; } = Substitute.For<IExecutionTransitionRepository>();
 

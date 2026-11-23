@@ -4,8 +4,11 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryTaskExecutionRepository : ITaskExecutionRepository, IResponseTimeoutRepairPageReader
+    internal sealed class InMemoryTaskExecutionRepository : ITaskExecutionRepository, IResponseTimeoutRepairPageReader, ITaskExecutionStageReader
     {
+        public Task<IReadOnlyCollection<TaskExecution>> GetByStageExecutionId(Id stageExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskExecution>>(_store.Tasks.Values.Where(x => x.StageExecutionId == stageExecutionId).ToArray());
+
         private readonly InMemoryRuntimeStore _store;
 
         public InMemoryTaskExecutionRepository(InMemoryRuntimeStore store)

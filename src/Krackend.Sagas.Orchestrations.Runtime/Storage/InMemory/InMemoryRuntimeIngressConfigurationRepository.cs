@@ -19,6 +19,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
+            foreach (var configuration in configurations) configuration.ProjectMessagingRoute();
             foreach (var current in _store.IngressConfigurations.Values.Where(x =>
                          x.RuntimeOrchestrationArtifactId == runtimeOrchestrationArtifactId &&
                          x.IsActive))
@@ -44,6 +45,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 current.MessageDisposition = configuration.MessageDisposition;
                 current.IngressTransport = configuration.IngressTransport;
                 current.SettingsPayload = configuration.SettingsPayload;
+                current.RouteTopic = configuration.RouteTopic;
+                current.RouteVersion = configuration.RouteVersion;
                 current.IsActive = true;
                 current.UpdatedOnUtc = configuration.UpdatedOnUtc;
                 current.DeactivatedOnUtc = null;

@@ -28,3 +28,8 @@ public interface IExecutionSandboxProvider
     /// <returns>A task that completes when dispatch has been accepted by the provider.</returns>
     Task DispatchAsync(ExecutionEnvelope envelope, CancellationToken cancellationToken = default);
 }
+
+internal interface IExecutionDispatchLifecycleProvider
+{
+    bool OwnsDispatchLifecycle { get; }
+}

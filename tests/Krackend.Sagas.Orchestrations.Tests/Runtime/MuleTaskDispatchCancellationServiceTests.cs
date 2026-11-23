@@ -72,6 +72,112 @@ public sealed class MuleTaskDispatchCancellationServiceTests
     }
 
     [Fact]
+    public async Task CancelAsyncCompletesTheLogicalFenceForDirectPublicationWithoutAMuleAction()
+    {
+        var storage = Substitute.For<IMuleStorage>();
+        storage
+            .FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MuleUlid?>((MuleUlid?)null));
+        var cancellationService = Substitute.For<IMuleCancellationService>();
+        var dispatch = CreateDispatch();
+        dispatch.Metadata["Runtime.Delivery.Command"] = new JsonObject
+        {
+            ["isPreparedDirectActivation"] = true
+        };
+
+        var result = await new MuleTaskDispatchCancellationService(
+                cancellationService,
+                Substitute.For<IMuleReplayService>(),
+                storage)
+            .CancelAsync(new TaskDispatchCancellationRequest
+            {
+                Dispatch = dispatch,
+                Reason = "terminal instance"
+            });
+
+        Assert.True(result.IsTerminal);
+        Assert.False(result.Requested);
+        Assert.Equal("DirectDispatchLogicalFence", result.Status);
+        await cancellationService.DidNotReceiveWithAnyArgs().CancelAsync(default, default);
+    }
+
+    [Fact]
+    public async Task CancelAsyncStillCancelsARecoveredMuleActionForADirectDispatch()
+    {
+        var actionId = MuleUlid.NewUlid();
+        var cancellationService = Substitute.For<IMuleCancellationService>();
+        cancellationService
+            .CancelAsync(actionId, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleCancellationResult>(
+                new MuleCancellationResult(actionId, MuleCancellationOutcome.Cancelled, null)));
+        var dispatch = CreateDispatch();
+        dispatch.Metadata["Runtime.Delivery.Command"] = new JsonObject
+        {
+            ["isPreparedDirectActivation"] = true
+        };
+        dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
+
+        var result = await new MuleTaskDispatchCancellationService(
+                cancellationService,
+                Substitute.For<IMuleReplayService>(),
+                Substitute.For<IMuleStorage>())
+            .CancelAsync(new TaskDispatchCancellationRequest
+            {
+                Dispatch = dispatch,
+                Reason = "terminal instance"
+            });
+
+        Assert.True(result.IsTerminal);
+        Assert.True(result.Requested);
+        await cancellationService.Received(1).CancelAsync(actionId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CancelAsyncStopsPollingALegacyMissingActionAfterRepeatedReconciliation()
+    {
+        var storage = Substitute.For<IMuleStorage>();
+        storage
+            .FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MuleUlid?>((MuleUlid?)null));
+        var dispatch = CreateDispatch();
+        dispatch.PhysicalCancellationAttemptCount = 12;
+
+        var result = await new MuleTaskDispatchCancellationService(
+                Substitute.For<IMuleCancellationService>(),
+                Substitute.For<IMuleReplayService>(),
+                storage)
+            .CancelAsync(new TaskDispatchCancellationRequest
+            {
+                Dispatch = dispatch,
+                Reason = "terminal instance"
+            });
+
+        Assert.True(result.IsTerminal);
+        Assert.Equal("ActionReferenceUnavailable", result.Status);
+    }
+
+    [Fact]
+    public async Task CancelAsyncKeepsPollingAReplayWhoseActionHasNotMaterialized()
+    {
+        var dispatch = CreateDispatch();
+        dispatch.PhysicalCancellationAttemptCount = 100;
+        dispatch.Metadata["Recovery.DispatchCancellationSourceStatus"] = JsonValue.Create("ReplayPending");
+
+        var result = await new MuleTaskDispatchCancellationService(
+                Substitute.For<IMuleCancellationService>(),
+                Substitute.For<IMuleReplayService>(),
+                Substitute.For<IMuleStorage>())
+            .CancelAsync(new TaskDispatchCancellationRequest
+            {
+                Dispatch = dispatch,
+                Reason = "terminal instance"
+            });
+
+        Assert.False(result.IsTerminal);
+        Assert.Equal("ActionReferencePending", result.Status);
+    }
+
+    [Fact]
     public async Task CancelAsyncRecoversAnUnrecordedActionReferenceFromTheDispatchDeduplicationKey()
     {
         var actionId = MuleUlid.NewUlid();

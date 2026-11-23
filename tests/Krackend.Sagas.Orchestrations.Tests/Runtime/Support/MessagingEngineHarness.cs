@@ -53,7 +53,9 @@ internal sealed class MessagingEngineHarness : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
-        services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, RecordingRemoteCommandDispatcher>());
+        // Dispatch activation intentionally runs in an isolated scope after the state
+        // commit. Keep the recorder shared so the harness observes those publications.
+        services.Replace(ServiceDescriptor.Singleton<IRemoteCommandDispatcher, RecordingRemoteCommandDispatcher>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, TestIngressConfigurationAccessor>());
         configureServices?.Invoke(services);
 
@@ -225,6 +227,14 @@ internal sealed class MessagingEngineHarness : IDisposable
     public T GetRequiredService<T>()
         where T : notnull
         => Services.GetRequiredService<T>();
+
+    public void SeedDispatchSnapshot(TaskDispatch dispatch)
+    {
+        // Seed historical or cancelled storage state explicitly. Ordinary repository
+        // updates intentionally cannot rewrite a real first-publication receipt.
+        var store = Services.GetRequiredService<Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory.InMemoryRuntimeStore>();
+        store.Dispatches[dispatch.Id] = dispatch.CreateSnapshot();
+    }
 
     public void Dispose()
     {

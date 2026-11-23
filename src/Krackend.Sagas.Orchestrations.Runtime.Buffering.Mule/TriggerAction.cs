@@ -27,6 +27,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             var intent = new StartIntent
             {
+                WaitForInstanceLease = false,
                 ArtifactId = workItem.ArtifactId,
                 MessageMetadata = workItem.MessageMetadata,
                 StartIdempotencyKey = BuildStartIdempotencyKey(context.Action),
@@ -35,10 +36,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 Payload = workItem.Payload
             };
 
-            await _sagaEngine.StartOrchestrationAsync(intent, cancellationToken);
+            await MuleCooperativeExecution.RunAsync(context,
+                () => _sagaEngine.StartOrchestrationAsync(intent, cancellationToken));
         }
 
-        private static string? BuildStartIdempotencyKey(DurableAction action)
+        internal static string? BuildStartIdempotencyKey(DurableAction action)
         {
             if (action is null)
             {
@@ -47,10 +49,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             if (!string.IsNullOrWhiteSpace(action.DeduplicationKey))
             {
-                return $"mule:{action.Key}:{action.DeduplicationKey.Trim()}";
+                return BuildStartIdempotencyKeyFromDeduplicationKey(action.DeduplicationKey);
             }
 
             return $"mule:{action.Key}:{action.Id}";
         }
+
+        internal static string BuildStartIdempotencyKeyFromDeduplicationKey(string deduplicationKey)
+            => $"mule:{MuleActionKeys.TriggerActionKey}:{deduplicationKey.Trim()}";
     }
 }

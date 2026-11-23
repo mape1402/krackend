@@ -3,7 +3,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 
-internal sealed class BuiltInLocalExecutionSandboxProvider : IExecutionSandboxProvider, IRecoverableExecutionSandboxProvider
+internal sealed class BuiltInLocalExecutionSandboxProvider : IExecutionSandboxProvider, IRecoverableExecutionSandboxProvider,
+    IExecutionDispatchLifecycleProvider
 {
     private readonly IRemoteCommandDispatcher _dispatcher;
 
@@ -17,6 +18,8 @@ internal sealed class BuiltInLocalExecutionSandboxProvider : IExecutionSandboxPr
     public string ExecutionMode => ExecutionConstants.InProcessTrustedMode;
 
     public bool IsSandbox => false;
+
+    public bool OwnsDispatchLifecycle => _dispatcher is IDurableRemoteCommandDispatcher;
 
     public Task DispatchAsync(ExecutionEnvelope envelope, CancellationToken cancellationToken = default)
     {

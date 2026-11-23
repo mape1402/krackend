@@ -25,3 +25,21 @@ public interface IOrchestrationInstanceCoordinator
         CancellationToken cancellationToken = default,
         bool waitForLease = true);
 }
+
+/// <summary>
+/// Coordinates creation of an instance whose identifier has not been persisted yet.
+/// </summary>
+/// <remarks>
+/// A proposed distributed identifier has no row that can be leased. This capability lets
+/// providers preserve the atomic creation transaction without issuing a guaranteed-miss
+/// lease update and lookup before every new orchestration.
+/// </remarks>
+public interface INewOrchestrationInstanceCoordinator
+{
+    /// <summary>Executes the atomic first mutation for a not-yet-persisted instance.</summary>
+    Task<bool> TryExecuteNewAsync(
+        Id proposedInstanceId,
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken = default,
+        bool waitForLocalGate = true);
+}

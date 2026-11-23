@@ -326,7 +326,38 @@ ASALocalRun/
 *.binlog
 
 # Internal migration notes and agent working files
-agents/
+agents/*
+# The stress services are executable demos. Keep the new lab sources reviewable.
+!agents/stress/
+agents/stress/*
+!agents/stress/Demo.ServiceKit/
+!agents/stress/Demo.RuntimeHost/
+!agents/stress/Demo.Verification/
+!agents/stress/Email/
+!agents/stress/docker/
+!agents/stress/DemoLab.slnx
+!agents/stress/README-demo-lab.md
+!agents/stress/Sales/
+agents/stress/Sales/*
+!agents/stress/Sales/src/
+agents/stress/Sales/src/*
+!agents/stress/Sales/src/Sales.Api/
+agents/stress/Sales/src/Sales.Api/*
+!agents/stress/Sales/src/Sales.Api/DemoHubConsumer.cs
+!agents/stress/Inventories/
+agents/stress/Inventories/*
+!agents/stress/Inventories/src/
+agents/stress/Inventories/src/*
+!agents/stress/Inventories/src/Inventories.Api/
+agents/stress/Inventories/src/Inventories.Api/*
+!agents/stress/Inventories/src/Inventories.Api/DemoHubConsumer.cs
+!agents/stress/Payments/
+agents/stress/Payments/*
+!agents/stress/Payments/src/
+agents/stress/Payments/src/*
+!agents/stress/Payments/src/Payments.Api/
+agents/stress/Payments/src/Payments.Api/*
+!agents/stress/Payments/src/Payments.Api/DemoHubConsumer.cs
 
 # NVidia Nsight GPU debugger configuration file
 *.nvuser

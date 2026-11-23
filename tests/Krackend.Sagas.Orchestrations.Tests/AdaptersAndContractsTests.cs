@@ -238,6 +238,18 @@ public sealed class AdaptersAndContractsTests
     }
 
     [Fact]
+    public void DistributedRuntimeIdsRetainStorageLeadingTimestampLocality()
+    {
+        var leadingBytes = Enumerable.Range(0, 256)
+            .Select(_ => KrackendId.NewDistributed().Value.ToByteArray()[0])
+            .Distinct()
+            .Count();
+
+        Assert.True(leadingBytes <= 2,
+            $"Expected timestamp-local runtime IDs, observed {leadingBytes} leading-byte buckets.");
+    }
+
+    [Fact]
     public void ContractsCarryVersionLifecycleEventData()
     {
         var deployed = new OrchestrationVersionDeployedEvent(

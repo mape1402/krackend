@@ -27,6 +27,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
     private readonly IRuntimeTriggerClaimRepository _triggerClaimRepository;
     private readonly IRuntimeIngressConfigurationKeyBuilder _ingressKeyBuilder;
+    private readonly RuntimeArtifactSnapshotCache _artifactCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -41,7 +42,8 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         IOrchestrationInstanceRepository instanceRepository,
         IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
         IRuntimeTriggerClaimRepository triggerClaimRepository,
-        IRuntimeIngressConfigurationKeyBuilder ingressKeyBuilder = null)
+        IRuntimeIngressConfigurationKeyBuilder ingressKeyBuilder = null,
+        RuntimeArtifactSnapshotCache artifactCache = null)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
@@ -53,6 +55,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
         _triggerClaimRepository = triggerClaimRepository ?? throw new ArgumentNullException(nameof(triggerClaimRepository));
         _ingressKeyBuilder = ingressKeyBuilder ?? new DefaultRuntimeIngressConfigurationKeyBuilder();
+        _artifactCache = artifactCache;
     }
 
     /// <inheritdoc />
@@ -77,7 +80,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
 
         try
         {
-            return ResolveOperation(package.ArtifactType) switch
+            var result = ResolveOperation(package.ArtifactType) switch
             {
                 RuntimeArtifactOperation.Deploy => await DeployNewVersionAsync(
                     package, sourceKey, payload, version, artifactId, sourceVersionId, cancellationToken),
@@ -87,6 +90,9 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                     package, sourceKey, version, targetArtifactChecksum, cancellationToken),
                 _ => Rejected($"Artifact type '{package.ArtifactType}' is not supported.")
             };
+            if (result.Accepted && !string.IsNullOrWhiteSpace(result.RuntimeArtifactId))
+                _artifactCache?.Invalidate(result.RuntimeArtifactId);
+            return result;
         }
         catch (InvalidOperationException exception)
         {
@@ -132,7 +138,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         if (replacements.Length == 0)
             return Rejected("No active version with matching triggers was found to roll back.");
         var now = DateTime.UtcNow;
-        var operationId = $"runtime-rollback:{Id.New()}";
+        var operationId = $"runtime-rollback:{Id.NewDistributed()}";
         target.IngressGeneration = Math.Max(target.IngressGeneration, 0) + 1;
         target.Notes = $"Rollback requested by '{requestedBy ?? string.Empty}'.";
 
@@ -144,7 +150,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             await _artifactRepository.Upsert(target, cancellationToken);
             await _deploymentHistoryRepository.Append(new RuntimeArtifactDeploymentRecord
             {
-                Id = Id.New(), RuntimeOrchestrationArtifactId = target.Id, OrchestrationDefinitionKey = target.OrchestrationDefinitionKey,
+                Id = Id.NewDistributed(), RuntimeOrchestrationArtifactId = target.Id, OrchestrationDefinitionKey = target.OrchestrationDefinitionKey,
                 OrchestrationVersion = target.Version.ToString(), ControlPlaneArtifactId = operationId, ReleaseId = operationId,
                 ArtifactType = "orchestration-version.rollback-requested", ReleaseStrategy = "Rollback",
                 LifecycleStatus = target.LifecycleStatus, RuntimeStatus = RuntimeOrchestrationArtifactStatus.Pending, AppliedOnUtc = now
@@ -197,8 +203,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }
 
         if (existingArtifact is not null && existingArtifact.Status == RuntimeOrchestrationArtifactStatus.Pending &&
-            !string.IsNullOrWhiteSpace(package.ReleaseId) &&
-            string.Equals(existingArtifact.LastReleaseId, package.ReleaseId, StringComparison.Ordinal) &&
+            string.Equals(existingArtifact.LastReleaseId ?? string.Empty, package.ReleaseId ?? string.Empty, StringComparison.Ordinal) &&
             string.Equals(existingArtifact.LastControlPlaneArtifactId, package.ArtifactId, StringComparison.Ordinal))
         {
             return Accepted(existingArtifact, RuntimeOrchestrationArtifactStatus.Pending,
@@ -768,7 +773,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         CancellationToken cancellationToken)
         => _deploymentHistoryRepository.Append(new RuntimeArtifactDeploymentRecord
         {
-            Id = Id.New(),
+            Id = Id.NewDistributed(),
             RuntimeOrchestrationArtifactId = artifact.Id,
             OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
             OrchestrationVersion = artifact.Version.ToString(),

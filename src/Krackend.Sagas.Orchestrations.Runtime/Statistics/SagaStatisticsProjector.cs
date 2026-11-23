@@ -17,7 +17,11 @@ public sealed class SagaStatisticsProjector : ISagaStatisticsProjector
         var previousRevision = snapshot?.Revision ?? 0;
         if (entry.Revision <= previousRevision)
             return new SagaStatisticsProjectionResult(SagaStatisticsProjectionDisposition.Duplicate, snapshot, [], null, false);
-        if (entry.Revision != previousRevision + 1)
+        // Revision is also the instance's optimistic-concurrency token. Internal
+        // mutations advance it without emitting redundant same-status observations,
+        // so a projected status change may legitimately jump forward. The first
+        // observation remains revision one, which still detects a missing baseline.
+        if (snapshot is null && entry.Revision != 1)
             return new SagaStatisticsProjectionResult(SagaStatisticsProjectionDisposition.Gap, snapshot, [], null, false);
 
         var reachedFlag = 1L << (int)entry.Status;

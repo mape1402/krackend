@@ -17,4 +17,5 @@
     <PackageReference Include="TurtlePath.EntityFrameworkCore" />
   </ItemGroup>
 
+  <ItemGroup><ProjectReference Include="../../../Demo.ServiceKit/Demo.ServiceKit.csproj" /></ItemGroup>
 </Project>

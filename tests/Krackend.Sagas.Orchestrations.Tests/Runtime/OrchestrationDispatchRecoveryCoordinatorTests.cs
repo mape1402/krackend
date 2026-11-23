@@ -20,12 +20,15 @@ public sealed class OrchestrationDispatchRecoveryCoordinatorTests
     {
         var fixture = new RecoveryFixture();
         var state = CreateState();
+        state.Attempt.RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}""");
+        var compactCommand = CreateCommand(state);
+        compactCommand.Payload = null;
         state.Dispatch.Metadata["Runtime.Delivery.ProviderKey"] = JsonValue.Create("builtin");
-        state.Dispatch.Metadata["Runtime.Delivery.Command"] = Serialize(CreateCommand(state));
+        state.Dispatch.Metadata["Runtime.Delivery.Command"] = Serialize(compactCommand);
         fixture.Arrange(state);
 
         Assert.True(await fixture.Coordinator.RecoverDispatchAsync(state.Dispatch.Id));
-        Assert.Single(fixture.Provider.RecoveryRequests);
+        Assert.Equal("""{"orderId":"order-1"}""", Assert.Single(fixture.Provider.RecoveryRequests).Command.Payload);
         await fixture.LeaseCoordinator.Received(1).TryExecuteAsync(state.Instance.Id,
             Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), waitForLease: false);
     }
@@ -53,6 +56,28 @@ public sealed class OrchestrationDispatchRecoveryCoordinatorTests
             Arg.Any<Func<CancellationToken, Task>>(),
             Arg.Any<CancellationToken>(),
             waitForLease: false);
+    }
+
+    [Fact]
+    public async Task RecoverPendingDispatchesLeavesFreshPreparedDirectIntentForItsCallback()
+    {
+        var fixture = new RecoveryFixture();
+        var state = CreateState();
+        state.Task.Status = TaskExecutionStatus.WaitingResponse;
+        state.Attempt.Status = TaskExecutionStatus.WaitingResponse;
+        var command = CreateCommand(state);
+        command.IsPreparedDirectActivation = true;
+        state.Dispatch.Metadata["Runtime.Delivery.ProviderKey"] = JsonValue.Create("builtin");
+        state.Dispatch.Metadata["Runtime.Delivery.Command"] = Serialize(command);
+        fixture.Arrange(state);
+
+        var handled = await fixture.Coordinator.RecoverPendingDispatchesAsync(10);
+
+        Assert.Equal(0, handled);
+        Assert.Equal("QueuePending", state.Dispatch.DispatchStatus);
+        Assert.Empty(fixture.Provider.RecoveryRequests);
+        await fixture.LeaseCoordinator.DidNotReceiveWithAnyArgs().TryExecuteAsync(
+            default, default!, default, default);
     }
 
     [Fact]

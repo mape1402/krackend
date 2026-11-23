@@ -16,6 +16,7 @@ public sealed class MessagingTaskRuntimeAdapter : ITaskRuntimeAdapter
 {
     private readonly IMessagingCommandSerializer _messagingCommandSerializer;
     private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
+    private readonly RuntimeBackchannelReplyAddressCache _replyAddressCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagingTaskRuntimeAdapter"/> class for validation-only usage.
@@ -29,12 +30,15 @@ public sealed class MessagingTaskRuntimeAdapter : ITaskRuntimeAdapter
     /// </summary>
     /// <param name="messagingCommandSerializer">Messaging command serializer.</param>
     /// <param name="ingressConfigurationAccessor">Ingress configuration accessor.</param>
+    /// <param name="replyAddressCache">Process-wide artifact backchannel cache.</param>
     public MessagingTaskRuntimeAdapter(
         IMessagingCommandSerializer messagingCommandSerializer,
-        IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor)
+        IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
+        RuntimeBackchannelReplyAddressCache replyAddressCache = null)
     {
         _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
         _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
+        _replyAddressCache = replyAddressCache;
     }
 
     /// <inheritdoc />
@@ -141,8 +145,7 @@ public sealed class MessagingTaskRuntimeAdapter : ITaskRuntimeAdapter
             SettingsPayload = _messagingCommandSerializer.Serialize(new MessagingCommand
             {
                 Topic = messagingConfiguration.Topic,
-                Version = messagingConfiguration.Version.ToString(),
-                Payload = request.Payload
+                Version = messagingConfiguration.Version.ToString()
             }),
             ReplyAddress = replyAddress
         };
@@ -163,8 +166,7 @@ public sealed class MessagingTaskRuntimeAdapter : ITaskRuntimeAdapter
             SettingsPayload = _messagingCommandSerializer.Serialize(new MessagingCommand
             {
                 Topic = messagingConfiguration.Topic,
-                Version = messagingConfiguration.Version.ToString(),
-                Payload = request.Payload
+                Version = messagingConfiguration.Version.ToString()
             }),
             ReplyAddress = replyAddress
         };
@@ -182,8 +184,23 @@ public sealed class MessagingTaskRuntimeAdapter : ITaskRuntimeAdapter
         OrchestrationInstance instance,
         CancellationToken cancellationToken)
     {
+        if (_replyAddressCache is not null)
+        {
+            return await _replyAddressCache.GetOrAddAsync(
+                instance.RuntimeOrchestrationArtifactId,
+                token => LoadBackchannelReplyAddressAsync(instance.RuntimeOrchestrationArtifactId, token),
+                cancellationToken);
+        }
+
+        return await LoadBackchannelReplyAddressAsync(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+    }
+
+    private async Task<OrchestrationReplyAddress> LoadBackchannelReplyAddressAsync(
+        Id runtimeArtifactId,
+        CancellationToken cancellationToken)
+    {
         var configurations = await _ingressConfigurationAccessor.GetConfigurationAsync(
-            instance.RuntimeOrchestrationArtifactId.ToString(),
+            runtimeArtifactId.ToString(),
             cancellationToken);
         var backchannel = configurations.FirstOrDefault(x =>
             x.IngressKind == IngressKind.Backchannel &&

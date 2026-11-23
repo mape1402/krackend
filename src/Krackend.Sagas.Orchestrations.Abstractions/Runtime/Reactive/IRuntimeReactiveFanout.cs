@@ -11,4 +11,10 @@ public interface IRuntimeReactiveFanout
 
     /// <summary>Distributes an event without being a source of truth for runtime state.</summary>
     Task PublishAsync(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests reconciliation on other replicas after optional notifications were lost.
+    /// Providers supporting replica reconciliation should override this method.
+    /// </summary>
+    Task PublishResyncAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

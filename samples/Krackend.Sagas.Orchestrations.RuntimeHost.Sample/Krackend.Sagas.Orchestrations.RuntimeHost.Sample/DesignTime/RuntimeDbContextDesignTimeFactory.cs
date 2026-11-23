@@ -32,7 +32,7 @@ public sealed class RuntimeDbContextDesignTimeFactory : IDesignTimeDbContextFact
             ConfigureModel = sqlServerStorageModelCustomizer.Configure
         });
 
-        return new RuntimeDbContext(options, storageOptions);
+        return RuntimeDbContext.Create(options, storageOptions);
     }
 
     private static string ResolveConnectionString()

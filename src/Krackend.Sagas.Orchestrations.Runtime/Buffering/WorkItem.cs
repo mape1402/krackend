@@ -9,6 +9,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering
     /// </summary>
     public class WorkItem
     {
+        /// <summary>Gets or sets the durable callback receipt carried across retries and recovery.</summary>
+        public string CallbackReceiptId { get; set; }
+
         /// <summary>
         /// Gets the runtime artifact id associated with the ingress configuration.
         /// </summary>

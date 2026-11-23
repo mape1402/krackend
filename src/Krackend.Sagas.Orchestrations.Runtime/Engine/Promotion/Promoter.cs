@@ -56,10 +56,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                     startIdempotencyKey,
                     cancellationToken);
                 if (existingInstance is not null)
-                {
                     return FromExistingInstance(existingInstance);
-                }
             }
+
+            // Relational storage still uses its unique start-key index to arbitrate a
+            // true concurrent race. The preflight read is also required because the
+            // batched transaction can perform its physical SaveChanges after this
+            // method returns, outside the conflict handler below.
 
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             if (!resolvedArtifact.RuntimeArtifact.IsActive ||
@@ -88,9 +91,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 };
             }
 
-            var instanceId = Id.New();
+            var instanceId = request.ProposedInstanceId ?? Id.NewDistributed();
             var correlationId = FirstNonEmpty(triggerMetadata.CorrelationId, request.MessageMetadata?.CorrelationId)
-                ?? Id.New().ToString();
+                ?? Id.NewDistributed().ToString();
             var sagaId = string.IsNullOrWhiteSpace(request.MessageMetadata?.SagaId)
                 ? instanceId.ToString()
                 : request.MessageMetadata.SagaId;
@@ -132,7 +135,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                     await _instanceRepository.Create(instance, token);
                     await _transitionRepository.Create(new ExecutionTransition
                     {
-                        Id = Id.New(),
+                        Id = Id.NewDistributed(),
                         OrchestrationInstanceId = instance.Id,
                         TransitionType = "InstancePromoted",
                         FromStatus = string.Empty,
@@ -163,7 +166,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 Success = true,
                 SagaId = sagaId,
                 CorrelationId = correlationId,
-                InstanceId = instance.Id.ToString()
+                InstanceId = instance.Id.ToString(),
+                Instance = instance
             };
         }
 
@@ -174,7 +178,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 SagaId = instance.SagaId,
                 CorrelationId = instance.CorrelationId,
                 InstanceId = instance.Id.ToString(),
-                AlreadyPromoted = true
+                AlreadyPromoted = true,
+                Instance = instance
             };
 
         private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
