@@ -2,7 +2,7 @@ param(
     [ValidateRange(1,120)][int]$DurationMinutes = 30,
     [ValidateRange(1,300)][int]$IntervalSeconds = 15,
     [int[]]$BlockSizes = @(100,150,200,250,300,350,400,450,500),
-    [ValidateRange(1,120)][int]$SpikeEveryMinutes = 10,
+    [ValidateRange(0,120)][int]$SpikeEveryMinutes = 10,
     [ValidateRange(1,10000)][int]$SpikeSize = 1000,
     [ValidateRange(1,60)][int]$MaxInstanceSeconds = 10,
     [int]$Seed = 0,
@@ -29,14 +29,16 @@ Assert-Demo ($SpikeSize % 10 -eq 0) 'SpikeSize must be a multiple of ten.'
 $durationSeconds = $DurationMinutes * 60
 $blockCount = [math]::Floor($durationSeconds / $IntervalSeconds)
 $spikeIntervalSeconds = $SpikeEveryMinutes * 60
-Assert-Demo ($spikeIntervalSeconds % $IntervalSeconds -eq 0) 'IntervalSeconds must land exactly on each scheduled spike.'
+if ($spikeIntervalSeconds -gt 0) {
+    Assert-Demo ($spikeIntervalSeconds % $IntervalSeconds -eq 0) 'IntervalSeconds must land exactly on each scheduled spike.'
+}
 $random = [Random]::new($Seed)
 $blocks = [Collections.Generic.List[object]]::new()
 $allScenarios = [Collections.Generic.List[object]]::new()
 
 for ($blockIndex = 0; $blockIndex -lt $blockCount; $blockIndex++) {
     $scheduledOffset = $blockIndex * $IntervalSeconds
-    $isSpike = $scheduledOffset -gt 0 -and $scheduledOffset % $spikeIntervalSeconds -eq 0
+    $isSpike = $spikeIntervalSeconds -gt 0 -and $scheduledOffset -gt 0 -and $scheduledOffset % $spikeIntervalSeconds -eq 0
     $size = if ($isSpike) { $SpikeSize } else { $sizes[$random.Next($sizes.Count)] }
     $perCase = [int]($size / 10)
     $scenarios = [Collections.Generic.List[object]]::new()
