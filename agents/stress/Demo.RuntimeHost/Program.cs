@@ -46,6 +46,9 @@ var usePostgres = string.Equals(
 var useSqlServerMemoryOptimizedExecutionState = builder.Configuration.GetValue(
     "Demo:SqlServerMemoryOptimizedExecutionState",
     true);
+var coordinateSqlServerDurableLogFlushes = !usePostgres && builder.Configuration.GetValue(
+    "Demo:SqlServerCoordinateDurableLogFlushes",
+    false);
 var muleKeyPrefix = RedisOrchestrationDurableActionStateReader.ResolveKeyPrefix(
     builder.Configuration,
     usePostgres);
@@ -82,7 +85,7 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
         storage.EmbedCurrentTransportState = true;
         storage.CompressSnapshotPayload = true;
         storage.PersistStatisticsObservations = false;
-        storage.CoordinateSqlServerDurableLogFlushes = !usePostgres;
+        storage.CoordinateSqlServerDurableLogFlushes = coordinateSqlServerDurableLogFlushes;
         storage.SqlServerDurableLogFlushWindow = TimeSpan.FromMilliseconds(Math.Clamp(
             builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushWindowMilliseconds", 8),
             0,
@@ -173,10 +176,11 @@ await using (var scope = app.Services.CreateAsyncScope())
         EXEC(N'ALTER DATABASE ' + @checkpointRuntimeDatabaseName +
             N' SET TARGET_RECOVERY_TIME = 300 SECONDS;');
         EXEC(N'ALTER DATABASE ' + @checkpointRuntimeDatabaseName +
-            N' SET DELAYED_DURABILITY = FORCED;');
-        EXEC(N'ALTER DATABASE ' + @checkpointRuntimeDatabaseName +
             N' SET AUTO_UPDATE_STATISTICS_ASYNC ON;');
         """);
+    await runtimeDb.Database.ExecuteSqlRawAsync(coordinateSqlServerDurableLogFlushes
+        ? "DECLARE @name nvarchar(258) = QUOTENAME(DB_NAME()); EXEC(N'ALTER DATABASE ' + @name + N' SET DELAYED_DURABILITY = FORCED;');"
+        : "DECLARE @name nvarchar(258) = QUOTENAME(DB_NAME()); EXEC(N'ALTER DATABASE ' + @name + N' SET DELAYED_DURABILITY = DISABLED;');");
     // Timestamp-leading runtime IDs preserve insertion locality. Cluster on that
     // identifier directly: hashing it caused near one page split per insert.
     await runtimeDb.Database.ExecuteSqlRawAsync("""

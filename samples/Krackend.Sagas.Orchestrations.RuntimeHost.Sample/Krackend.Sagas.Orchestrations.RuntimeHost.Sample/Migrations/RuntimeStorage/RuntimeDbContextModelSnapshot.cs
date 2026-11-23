@@ -23,6 +23,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence("RuntimeStorageSequence", "Runtime");
+
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.CompensationExecution", b =>
                 {
                     b.Property<byte[]>("Id")
@@ -385,11 +387,12 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CorrelationId");
+                    b.HasIndex("CorrelationId")
+                        .HasAnnotation("Npgsql:IndexOperators", new[] { "varchar_pattern_ops" });
 
-                    b.HasIndex("LastUpdatedOnUtc");
-
-                    b.HasIndex("SagaId");
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_OrchestrationInstances_DispatchCancellationPending_Id")
+                        .HasFilter("[DispatchCancellationPending] = 1");
 
                     b.HasIndex("StartIdempotencyKey")
                         .IsUnique()
@@ -398,17 +401,21 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("StatisticsRevision")
                         .HasFilter("[StatisticsRevision] = 0");
 
-                    b.HasIndex("DispatchCancellationPending", "LastUpdatedOnUtc");
+                    b.HasIndex("ExpiresOnUtc", "Id")
+                        .HasDatabaseName("IX_OrchestrationInstances_Running_ExpiresOnUtc_Id")
+                        .HasFilter("[Status] = 'Running' AND [ExpiresOnUtc] IS NOT NULL");
 
-                    b.HasIndex("StartedOnUtc", "Status");
+                    b.HasIndex("IdleExpiresOnUtc", "Id")
+                        .HasDatabaseName("IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id")
+                        .HasFilter("[Status] = 'Idle' AND [IdleExpiresOnUtc] IS NOT NULL");
 
-                    b.HasIndex("Status", "IdleExpiresOnUtc");
-
-                    b.HasIndex("Status", "LastUpdatedOnUtc");
-
-                    b.HasIndex("Status", "ExpiresOnUtc", "Id");
+                    b.HasIndex("StartedOnUtc", "Id")
+                        .HasDatabaseName("IX_OrchestrationInstances_Running_StartedOnUtc_Id")
+                        .HasFilter("[Status] = 'Running'");
 
                     b.ToTable("OrchestrationInstances", "Runtime");
+
+                    b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 30);
                 });
 
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.RuntimeArtifactDeploymentRecord", b =>
@@ -743,22 +750,39 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime?>("SentOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<long>("StorageSequence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("NEXT VALUE FOR [Runtime].[RuntimeStorageSequence]");
+
                     b.Property<byte[]>("TaskExecutionAttemptId")
                         .IsRequired()
                         .HasColumnType("binary(16)");
 
                     b.HasKey("Id");
 
+                    SqlServerKeyBuilderExtensions.IsClustered(b.HasKey("Id"), false);
+
                     b.HasIndex("CommandId");
 
-                    b.HasIndex("DispatchStatus");
+                    b.HasIndex("PhysicalCancellationPending")
+                        .HasFilter("[PhysicalCancellationPending] = 1");
 
-                    b.HasIndex("PhysicalCancellationPending");
+                    b.HasIndex("StorageSequence")
+                        .IsUnique()
+                        .HasDatabaseName("CIX_TaskDispatches_StorageSequence");
+
+                    SqlServerIndexBuilderExtensions.IsClustered(b.HasIndex("StorageSequence"));
 
                     b.HasIndex("TaskExecutionAttemptId")
                         .IsUnique();
 
-                    b.HasIndex("CallbackPending", "CallbackAcceptedOnUtc");
+                    b.HasIndex("CallbackPending", "CallbackAcceptedOnUtc")
+                        .HasFilter("[CallbackPending] = 1");
+
+                    b.HasIndex("ScheduledOnUtc", "Id")
+                        .HasDatabaseName("IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc")
+                        .HasFilter("[DispatchStatus] = 'QueuePending'");
 
                     b.ToTable("TaskDispatches", "Runtime");
                 });
@@ -860,14 +884,18 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasIndex("CorrelationId");
 
-                    b.HasIndex("Status");
+                    b.HasIndex("OrchestrationInstanceId");
+
+                    b.HasIndex("ResponseDeadlineUtc", "Id")
+                        .HasDatabaseName("IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id")
+                        .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NOT NULL");
 
                     b.HasIndex("StageExecutionId", "TaskKey")
                         .IsUnique();
 
-                    b.HasIndex("Status", "ResponseDeadlineUtc");
-
-                    b.HasIndex("Status", "TimeoutActionId");
+                    b.HasIndex("WaitingSinceUtc", "Id")
+                        .HasDatabaseName("IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id")
+                        .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NULL");
 
                     b.ToTable("TaskExecutions", "Runtime");
                 });
@@ -914,6 +942,11 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<long>("StorageSequence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("NEXT VALUE FOR [Runtime].[RuntimeStorageSequence]");
+
                     b.Property<byte[]>("TaskExecutionId")
                         .IsRequired()
                         .HasColumnType("binary(16)");
@@ -926,9 +959,15 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
+                    SqlServerKeyBuilderExtensions.IsClustered(b.HasKey("Id"), false);
+
                     b.HasIndex("DispatchId");
 
-                    b.HasIndex("Status");
+                    b.HasIndex("StorageSequence")
+                        .IsUnique()
+                        .HasDatabaseName("CIX_TaskExecutionAttempts_StorageSequence");
+
+                    SqlServerIndexBuilderExtensions.IsClustered(b.HasIndex("StorageSequence"));
 
                     b.HasIndex("TaskExecutionId", "AttemptNumber")
                         .IsUnique();
@@ -1359,14 +1398,14 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasKey("Id");
 
                     b.HasIndex("InstanceId", "Revision")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_SagaStatisticsObservations_Pending_InstanceId_Revision")
+                        .HasFilter("[Processed] = 0");
 
                     b.HasIndex("OrchestrationKey", "OccurredOnUtc")
                         .HasFilter("[Processed] = 1 AND [StatusChanged] = 1 AND [IsBackfill] = 0");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("OrchestrationKey", "OccurredOnUtc"), new[] { "Status" });
-
-                    b.HasIndex("Processed", "InstanceId", "Revision");
 
                     b.ToTable("SagaStatisticsObservations", "Runtime");
                 });
@@ -1493,6 +1532,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId");
 
                     b.HasIndex("Key", "DeduplicationKey");
 

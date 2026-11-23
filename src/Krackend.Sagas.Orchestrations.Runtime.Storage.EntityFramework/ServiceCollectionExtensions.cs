@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
@@ -42,6 +43,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<RuntimeMutationLeaseScope>();
         services.TryAddSingleton<RuntimeSqlServerDurableLogFlushCoordinator>();
         services.TryAddSingleton<RuntimeSqlServerDurableLogFlushInterceptor>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddOptions<RuntimeHistoryRetentionOptions>().BindConfiguration("Runtime:HistoryRetention");
+        services.TryAddScoped<IRuntimeHistoryRetentionProcessor, RuntimeHistoryRetentionProcessor>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeHistoryRetentionBackgroundService>());
 
         var storageOptions = new RuntimeEntityFrameworkStorageOptions();
         configureStorage?.Invoke(storageOptions);
@@ -100,8 +105,18 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsBackfill, SagaStatisticsBackfill>());
         services.Replace(ServiceDescriptor.Scoped<SagaStatisticsReader>(provider =>
             new SagaStatisticsReader(provider.GetRequiredService<RuntimeDbContext>())));
-        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
-        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+        if (storageOptions.PersistStatisticsObservations)
+        {
+            services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+            services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+        }
+        else
+        {
+            services.Replace(ServiceDescriptor.Scoped<OperationalSagaStatisticsReader>(provider =>
+                new OperationalSagaStatisticsReader(provider.GetRequiredService<RuntimeDbContext>())));
+            services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<OperationalSagaStatisticsReader>()));
+            services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<OperationalSagaStatisticsReader>()));
+        }
         services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
         services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsBackfill, SagaFailureStatisticsBackfill>());
         services.Replace(ServiceDescriptor.Scoped<ISagaFailureScopeBackfill, SagaFailureScopeBackfill>());

@@ -196,17 +196,19 @@ services:
       ConnectionStrings__Default: "Server=runtime-sql,1433;Database=KrackendRuntimeSqlServerV8;User Id=sa;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};Encrypt=True;TrustServerCertificate=True;Pooling=True;Min Pool Size=64;Max Pool Size=1024;Connect Timeout=30;ConnectRetryCount=3;ConnectRetryInterval=1;Application Name=Krackend.Demo.Runtime"
       Demo__RuntimeProvider: "SqlServer"
       Demo__SqlServerMemoryOptimizedExecutionState: "true"
+      # Native durable commits were faster than the optional explicit sp_flush_log
+      # coordinator on this workload and preserve the same durable ACK boundary.
+      Demo__SqlServerCoordinateDurableLogFlushes: "false"
       Demo__SqlServerDurableLogFlushWindowMilliseconds: "4"
-      # Logical commits and dispatches remain concurrent. Keep a small bounded set of
-      # physical pumps; callers still coalesce instead of issuing one fsync each.
       Demo__SqlServerDurableLogFlushConcurrency: "4"
       # Hold the burst working set open before consumers start. Leaving only 64
       # physical sessions warm made SqlClient grow the pool reactively while a
       # 200-instance burst was already waiting inside SaveChanges.
       Demo__RuntimePoolWarmConnections: "256"
-      # This remains a floor, not a concurrency ceiling. Let hill-climbing add
-      # workers instead of forcing a 256-thread SQL write stampede immediately.
-      Demo__ThreadPoolMinThreads: "64"
+      # This remains a floor, not a concurrency ceiling. Keep enough workers ready
+      # for the synchronous prefixes of a 200-message burst without waiting for
+      # ThreadPool hill-climbing; continuations remain fully asynchronous.
+      Demo__ThreadPoolMinThreads: "128"
       Demo__MuleKeyPrefix: "krackend:demo:runtime:sqlserver:v8"
       ConnectionStrings__MuleRedis: "redis:6379,defaultDatabase=4"
       Pigeon__MessageBrokers__RabbitMq__ConnectionString: "amqp://demo:${DEMO_RABBIT_PASSWORD:?Set DEMO_RABBIT_PASSWORD}@rabbit:5672"
@@ -217,7 +219,17 @@ services:
       Runtime__Replica__ReplicaId: "demo-runtime"
       # Statistics are a derived read model. Keep its batch projector out of the
       # latency lab so it cannot preempt functional saga commits every ten seconds.
+      # The dashboard falls back to canonical execution state when observations are
+      # disabled, so this no longer trades observability for throughput.
       Runtime__Statistics__Enabled: "false"
+      # Keep only successful terminal graphs in the hot lab database for one day.
+      # Active, failed, dead-lettered, stopped and aborted sagas are never removed.
+      Runtime__HistoryRetention__Enabled: "true"
+      Runtime__HistoryRetention__CompletedRetentionHours: "24"
+      Runtime__HistoryRetention__BatchSize: "250"
+      Runtime__HistoryRetention__MaxBatchesPerSweep: "2"
+      Runtime__HistoryRetention__InitialDelaySeconds: "120"
+      Runtime__HistoryRetention__SweepIntervalSeconds: "600"
     ports: ["127.0.0.1:5410:8080"]
     depends_on:
       runtime-sql: { condition: service_healthy }

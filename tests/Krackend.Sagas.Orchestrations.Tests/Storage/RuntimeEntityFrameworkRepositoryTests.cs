@@ -1338,6 +1338,118 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task DashboardReadsCanonicalStateWhenDeferredStatisticsAreDisabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(
+            configureDbContext: options => options.UseSqlite(connection),
+            configureStorage: options => options.PersistStatisticsObservations = false);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var context = services.GetRequiredService<RuntimeDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        var repository = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var completed = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-30));
+        completed.OrchestrationVersion = "1.0.0";
+        var running = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-20));
+        running.OrchestrationVersion = "1.0.0";
+        await repository.Create(completed);
+        await repository.Create(running);
+        completed.Status = OrchestrationInstanceStatus.Completed;
+        completed.CompletedOnUtc = now.AddMinutes(-5);
+        completed.LastUpdatedOnUtc = completed.CompletedOnUtc.Value;
+        await repository.Update(completed);
+
+        await using (var observations = connection.CreateCommand())
+        {
+            observations.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations";
+            Assert.Equal(0L, Convert.ToInt64(await observations.ExecuteScalarAsync()));
+        }
+        var reader = services.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1));
+        var cohort = await reader.GetCohortAsync(query);
+        var activity = await reader.GetActivityAsync(
+            query with { RestrictActivityToStartedCohort = true },
+            SagaStatisticsActivityBucket.Minute);
+        var ranking = await reader.GetTopOrchestrationsAsync(query, 10);
+        var report = await services.GetRequiredService<ISagaStatisticsReader>()
+            .GetReportAsync(query.FromUtc, query.BeforeUtc);
+
+        Assert.Equal(2, cohort.Total);
+        Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Completed]);
+        Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Running]);
+        Assert.Contains(activity, item => item.Status == OrchestrationInstanceStatus.Completed && item.Count == 1);
+        Assert.Equal(2, Assert.Single(ranking).StartedInstances);
+        Assert.Equal(2, report.Total);
+        Assert.True((await reader.GetHealthAsync()).BackfillCompleted);
+        Assert.Contains(completed.OrchestrationDefinitionKey, await reader.GetOrchestrationKeysAsync());
+        Assert.Contains("1.0.0", await reader.SearchOrchestrationVersionsAsync(completed.OrchestrationDefinitionKey, string.Empty));
+    }
+
+    [Fact]
+    public async Task HistoryRetentionRemovesOnlyExpiredSuccessfulExecutionGraphs()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var context = services.GetRequiredService<RuntimeDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        var repository = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var expired = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now.AddDays(-3));
+        expired.CompletedOnUtc = expired.LastUpdatedOnUtc = now.AddDays(-2);
+        var recent = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now.AddHours(-2));
+        recent.CompletedOnUtc = recent.LastUpdatedOnUtc = now.AddHours(-1);
+        var failed = Instance(Id.New(), OrchestrationInstanceStatus.Failed, now.AddDays(-3));
+        failed.FailedOnUtc = failed.LastUpdatedOnUtc = now.AddDays(-2);
+        var running = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddDays(-3));
+        running.LastUpdatedOnUtc = now.AddDays(-2);
+        foreach (var instance in new[] { expired, recent, failed, running }) await repository.Create(instance);
+
+        var stage = new StageExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = expired.Id, StageKey = "stage", Status = StageExecutionStatus.Completed
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = expired.Id, StageExecutionId = stage.Id,
+            TaskKey = "task", Status = TaskExecutionStatus.Completed
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(), TaskExecutionId = task.Id, AttemptNumber = 1, Status = TaskExecutionStatus.Completed
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(), TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Message", DispatchStatus = "Completed"
+        };
+        context.StageExecutions.Add(stage);
+        context.TaskExecutions.Add(task);
+        context.TaskExecutionAttempts.Add(attempt);
+        context.TaskDispatches.Add(dispatch);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var result = await services.GetRequiredService<IRuntimeHistoryRetentionProcessor>()
+            .ProcessAsync(now.AddDays(-1), 100);
+
+        Assert.Equal(1, result.RemovedInstances);
+        Assert.False(await context.OrchestrationInstances.AnyAsync(item => item.Id == expired.Id));
+        Assert.False(await context.StageExecutions.AnyAsync(item => item.Id == stage.Id));
+        Assert.False(await context.TaskExecutions.AnyAsync(item => item.Id == task.Id));
+        Assert.False(await context.TaskExecutionAttempts.AnyAsync(item => item.Id == attempt.Id));
+        Assert.False(await context.TaskDispatches.AnyAsync(item => item.Id == dispatch.Id));
+        Assert.True(await context.OrchestrationInstances.AnyAsync(item => item.Id == recent.Id));
+        Assert.True(await context.OrchestrationInstances.AnyAsync(item => item.Id == failed.Id));
+        Assert.True(await context.OrchestrationInstances.AnyAsync(item => item.Id == running.Id));
+    }
+
+    [Fact]
     public async Task DashboardActivityCanExcludeTransitionsFromOlderInstances()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -2849,14 +2961,15 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
 
     private static ServiceProvider CreateProvider(
         IRuntimeReactiveEventPublisher? publisher = null,
-        Action<DbContextOptionsBuilder>? configureDbContext = null)
+        Action<DbContextOptionsBuilder>? configureDbContext = null,
+        Action<RuntimeEntityFrameworkStorageOptions>? configureStorage = null)
     {
         var services = new ServiceCollection();
         var databaseRoot = new InMemoryDatabaseRoot();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
         services.AddOrchestratorRuntimeStorageEntityFramework(configureDbContext ?? (options =>
-            options.UseInMemoryDatabase($"runtime-storage-{Guid.NewGuid():N}", databaseRoot)));
+            options.UseInMemoryDatabase($"runtime-storage-{Guid.NewGuid():N}", databaseRoot)), configureStorage);
         if (publisher is not null)
         {
             services.Replace(ServiceDescriptor.Singleton(publisher));

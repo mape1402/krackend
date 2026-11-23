@@ -20,7 +20,7 @@ public sealed class RuntimeSqlServerStorageModelCustomizer
     /// <param name="memoryOptimizedExecutionState">
     /// Whether the three hot execution-state tables use SQL Server In-Memory OLTP.
     /// </param>
-    public RuntimeSqlServerStorageModelCustomizer(bool memoryOptimizedExecutionState = true)
+    public RuntimeSqlServerStorageModelCustomizer(bool memoryOptimizedExecutionState = false)
     {
         _memoryOptimizedExecutionState = memoryOptimizedExecutionState;
     }

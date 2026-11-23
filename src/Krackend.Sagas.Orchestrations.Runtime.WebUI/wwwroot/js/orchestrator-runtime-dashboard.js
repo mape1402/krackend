@@ -673,6 +673,12 @@
     }
 
     function queueLiveEvent(event) {
+        // Statistics observations may be intentionally disabled on high-throughput
+        // runtimes. In that mode the dashboard reads canonical execution state and
+        // no projection-updated event is emitted, so transitions must invalidate the
+        // coalesced snapshot as well. The 15-second timer guarantees that a burst of
+        // thousands of transitions still causes only one dashboard read.
+        scheduleStatisticsRefresh();
         const transitionType = String(eventValue(event, 'transitionType') || '');
         if (root.dataset.failuresUrl && /(?:Failed|TimedOut)$/.test(transitionType) && !failuresTimer) {
             failuresTimer = window.setTimeout(() => { failuresTimer = 0; void loadFailures(); }, 15000);
