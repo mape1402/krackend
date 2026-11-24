@@ -1932,6 +1932,43 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositorySelectsOnlyRunningInstancesWithoutActiveWorkOrLease()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var repository = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        var candidates = Assert.IsAssignableFrom<IOrchestrationProgressRecoveryCandidateRepository>(repository);
+        var taskRepository = services.GetRequiredService<ITaskExecutionRepository>();
+        var now = DateTime.UtcNow;
+        var artifactId = Id.New();
+        var orphan = Instance(artifactId, OrchestrationInstanceStatus.Running, now.AddMinutes(-5));
+        var active = Instance(artifactId, OrchestrationInstanceStatus.Running, now.AddMinutes(-4));
+        var leased = Instance(artifactId, OrchestrationInstanceStatus.Running, now.AddMinutes(-3));
+        leased.ActiveLeaseId = "active";
+        leased.ActiveLeaseExpiresOnUtc = now.AddMinutes(1);
+        var young = Instance(artifactId, OrchestrationInstanceStatus.Running, now.AddSeconds(-5));
+        var completed = Instance(artifactId, OrchestrationInstanceStatus.Completed, now.AddMinutes(-6));
+        await repository.Create(orphan);
+        await repository.Create(active);
+        await repository.Create(leased);
+        await repository.Create(young);
+        await repository.Create(completed);
+        await taskRepository.Create(new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = active.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "active-task",
+            Status = TaskExecutionStatus.WaitingResponse
+        });
+
+        var recovered = await candidates.GetProgressRecoveryCandidates(now.AddSeconds(-30), now, 10);
+
+        Assert.Equal([orphan.Id], recovered);
+    }
+
+    [Fact]
     public async Task OrchestrationInstanceRepositoryFindsCancellationIntentsOnTerminalInstances()
     {
         await using var provider = CreateProvider();

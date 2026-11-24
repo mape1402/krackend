@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IOrchestrationProgressRecoveryCandidateRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -211,6 +211,26 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .Where(static x => !IsTerminal(x.Status))
                 .OrderBy(static x => x.LastUpdatedOnUtc)
                 .Take(take)
+                .ToArray());
+
+        public Task<IReadOnlyCollection<Id>> GetProgressRecoveryCandidates(
+            DateTime startedOnOrBeforeUtc,
+            DateTime leaseExpiredOnOrBeforeUtc,
+            int take = 100,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Id>>(_store.Instances.Values
+                .Where(instance =>
+                    instance.Status == OrchestrationInstanceStatus.Running &&
+                    instance.StartedOnUtc <= startedOnOrBeforeUtc &&
+                    (instance.ActiveLeaseExpiresOnUtc is null || instance.ActiveLeaseExpiresOnUtc <= leaseExpiredOnOrBeforeUtc) &&
+                    !_store.Tasks.Values.Any(task =>
+                        task.OrchestrationInstanceId == instance.Id &&
+                        task.Status is TaskExecutionStatus.Pending or TaskExecutionStatus.Running or
+                            TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying))
+                .OrderBy(instance => instance.StartedOnUtc)
+                .ThenBy(instance => instance.Id)
+                .Take(Math.Max(1, take))
+                .Select(instance => instance.Id)
                 .ToArray());
 
         public Task<IReadOnlyCollection<Id>> GetLifetimeCandidates(

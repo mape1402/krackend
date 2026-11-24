@@ -10,6 +10,7 @@ using System.Diagnostics;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Microsoft.Extensions.Hosting;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
@@ -23,6 +24,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IMuleBackchannelImmediateDispatcher? _immediateBackchannels;
         private readonly ISagaEngine? _sagaEngine;
         private readonly RuntimeForegroundActivity? _foregroundActivity;
+        private readonly CancellationToken _applicationStopping;
 
         public IntakeBufferMule(
             IMuleClient muleClient,
@@ -32,7 +34,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             ITaskDispatchRepository? dispatches = null,
             IMuleBackchannelImmediateDispatcher? immediateBackchannels = null,
             ISagaEngine? sagaEngine = null,
-            RuntimeForegroundActivity? foregroundActivity = null)
+            RuntimeForegroundActivity? foregroundActivity = null,
+            IHostApplicationLifetime? applicationLifetime = null)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
             _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
@@ -42,6 +45,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _immediateBackchannels = immediateBackchannels;
             _sagaEngine = sagaEngine;
             _foregroundActivity = foregroundActivity;
+            _applicationStopping = applicationLifetime?.ApplicationStopping ?? CancellationToken.None;
         }
 
         public async Task EnqueueWorkAsync(WorkItem workItem, CancellationToken cancellationToken = default)
@@ -70,6 +74,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     : RuntimeAdmissionOperation.TriggerIntake,
                 cancellationToken);
 
+            // Once admission succeeds, the Runtime owns the mutation. A caller can
+            // disconnect or time out while the accepted transition is committing;
+            // propagating that request token can leave a stage advanced without its
+            // next task or durable recovery action. Only host shutdown may cancel
+            // accepted work from this point forward.
+            var processingCancellation = _applicationStopping;
+
             switch (workItem.IngressKind)
             {
                 case Ingress.IngressKind.Trigger:
@@ -87,10 +98,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                                 PropagationMetadata = workItem.PropagationMetadata,
                                 IngressTransport = workItem.IngressTransport,
                                 Payload = workItem.Payload
-                            }, cancellationToken);
+                            }, processingCancellation);
                             break;
                         }
-                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        catch (OperationCanceledException) when (processingCancellation.IsCancellationRequested)
                         {
                             throw;
                         }
@@ -113,7 +124,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                                 ?? workItem.MessageMetadata?.SagaId;
                             options.DeduplicationKey = BuildTriggerDeduplicationKey(workItem);
                         },
-                        cancellationToken);
+                        processingCancellation);
                     break;
 
                 case Ingress.IngressKind.Backchannel:
@@ -133,11 +144,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                                     null,
                                     workItem,
                                     BackchannelAction.CreateIntent(workItem, waitForInstanceLease: false),
-                                    cancellationToken,
+                                    processingCancellation,
                                     TimeSpan.Zero);
                                 break;
                             }
-                            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                            catch (OperationCanceledException) when (processingCancellation.IsCancellationRequested)
                             {
                                 throw;
                             }
@@ -164,10 +175,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                                         {
                                             await _immediateBackchannels.DispatchDirectAsync(
                                                 workItem,
-                                                cancellationToken);
+                                                processingCancellation);
                                             break;
                                         }
-                                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                                        catch (OperationCanceledException) when (processingCancellation.IsCancellationRequested)
                                         {
                                             throw;
                                         }
@@ -179,7 +190,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                                         }
                                     }
 
-                                    await EnqueueResponseAsync(workItem, cancellationToken);
+                                    await EnqueueResponseAsync(workItem, processingCancellation);
                                     break;
                                 }
                             }
@@ -187,7 +198,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
                         workItem.CallbackReceiptId ??= Id.NewDistributed().ToString();
                         var receipt = await receipts.TryAcceptCallback(new Id(dispatchValue), workItem.CallbackReceiptId,
-                            JsonSerializer.Serialize(workItem), DateTime.UtcNow, cancellationToken,
+                            JsonSerializer.Serialize(workItem), DateTime.UtcNow, processingCancellation,
                             new TaskCallbackIdentity(ParseOptionalId(workItem.MessageMetadata.OrchestrationInstanceId),
                                 ParseOptionalId(workItem.MessageMetadata.TaskExecutionId), workItem.MessageMetadata.Attempt,
                                 ParseOptionalId(workItem.ArtifactId)));
@@ -201,10 +212,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                             // consumer immediately. If the in-memory handoff is unavailable,
                             // the same callback falls back to a durable Mule action.
                             if (_immediateBackchannels?.TryDispatch(workItem) != true)
-                                await EnqueueResponseAsync(workItem, cancellationToken);
+                                await EnqueueResponseAsync(workItem, processingCancellation);
                             break;
                         }
-                        if (await _dispatches.TryGetById(new Id(dispatchValue), cancellationToken) is not null)
+                        if (await _dispatches.TryGetById(new Id(dispatchValue), processingCancellation) is not null)
                         {
                             // A different artifact/attempt can share a physical consumer.
                             // It must not reserve the valid callback's deduplication key.
@@ -225,10 +236,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         // Serialize only with another mutation of this exact instance.
                         // Waiting here avoids converting normal same-saga overlap into
                         // redelivery/recovery churn; unrelated instances have separate gates.
-                        var accepted = await _coordinator.TryExecuteAsync(instanceId, AcceptResponseAsync, cancellationToken, waitForLease: true);
+                        var accepted = await _coordinator.TryExecuteAsync(instanceId, AcceptResponseAsync, processingCancellation, waitForLease: true);
                         if (!accepted) throw new OrchestrationInstanceLeaseUnavailableException(instanceId);
                     }
-                    else await AcceptResponseAsync(cancellationToken);
+                    else await AcceptResponseAsync(processingCancellation);
                     break;
 
                 default:

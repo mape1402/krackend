@@ -50,6 +50,25 @@ public interface IOrchestrationInstanceRepository
 }
 
 /// <summary>
+/// Provides a bounded, indexed scan for running instances that have lost all executable work.
+/// </summary>
+/// <remarks>
+/// This recovery query is intentionally separate from <see cref="IOrchestrationInstanceRepository.GetRecoverable"/>.
+/// Healthy running instances are excluded in storage so periodic reconciliation does not enumerate the live workload.
+/// </remarks>
+public interface IOrchestrationProgressRecoveryCandidateRepository
+{
+    /// <summary>
+    /// Gets running instances old enough to reconcile, without an active mutation lease or a non-terminal task.
+    /// </summary>
+    Task<IReadOnlyCollection<Id>> GetProgressRecoveryCandidates(
+        DateTime startedOnOrBeforeUtc,
+        DateTime leaseExpiredOnOrBeforeUtc,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Indicates that instance creation and start-idempotency uniqueness are committed
 /// atomically by the backing store. Callers may optimistically insert and resolve the
 /// rare uniqueness conflict instead of issuing a guaranteed-miss preflight read.
