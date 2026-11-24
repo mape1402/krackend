@@ -52,6 +52,7 @@
         const url = new URL(root.dataset.source, location.href);
         url.searchParams.set('page', String(Math.floor(startRow / 25) + 1));
         url.searchParams.set('pageSize', '25');
+        url.searchParams.set('includeTotalCount', 'false');
         url.searchParams.set('startedFrom', new Date(snapshotEnd.getTime() - hours * 3600000).toISOString());
         url.searchParams.set('startedBefore', snapshotEnd.toISOString());
         url.searchParams.set('sort', 'startedOnUtc'); url.searchParams.set('descending', 'true');
@@ -90,8 +91,10 @@
                     if (!response.ok) throw new Error('Instances unavailable');
                     const result = await response.json();
                     if (requestRevision !== revision || requestLayout !== layoutRevision) { params.failCallback(); return; }
-                    if (snapshotTotal === null) snapshotTotal = Number(result.totalCount);
+                    if (snapshotTotal === null && result.totalCount != null) snapshotTotal = Number(result.totalCount);
                     rowsInPage = result.items;
+                    if (snapshotTotal === null && result.hasMore === false)
+                        snapshotTotal = page * 25 + rowsInPage.length;
                     snapshotPages.set(page, rowsInPage);
                     for (const row of rowsInPage) snapshotRows.set(String(row.id), row);
                     if (snapshotPages.size > 22) {
@@ -109,10 +112,12 @@
                 offset += rows.length;
             }
             if (requestRevision !== revision || requestLayout !== layoutRevision) { params.failCallback(); return; }
-            const total = snapshotTotal + appended.length;
+            const total = snapshotTotal === null ? undefined : snapshotTotal + appended.length;
             params.successCallback(items, total);
             flushedAppends = appended.length;
-            root.querySelector('[data-runtime-loaded-copy]').textContent = `${total.toLocaleString()} matching instances`;
+            root.querySelector('[data-runtime-loaded-copy]').textContent = total == null
+                ? `${(params.startRow + items.length).toLocaleString()}+ matching instances`
+                : `${total.toLocaleString()} matching instances`;
         } catch (error) { params.failCallback(); if (requestRevision === revision) root.querySelector('[data-runtime-loaded-copy]').textContent = 'Unable to load instances'; }
     } };
     api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20,

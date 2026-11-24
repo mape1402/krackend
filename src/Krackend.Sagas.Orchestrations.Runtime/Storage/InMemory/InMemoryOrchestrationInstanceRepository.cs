@@ -119,7 +119,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 (_, false) => filtered.OrderBy(x => x.LastUpdatedOnUtc),
                 _ => filtered.OrderByDescending(x => x.LastUpdatedOnUtc)
             };
-            return Task.FromResult(new RuntimeInstanceCatalogPage(ordered.ThenBy(x => x.Id).Skip(skip).Take(size).ToArray(), filtered.LongLength, page, size));
+            var deterministic = query.Descending
+                ? ordered.ThenByDescending(x => x.Id)
+                : ordered.ThenBy(x => x.Id);
+            var rows = deterministic.Skip(skip)
+                .Take(query.IncludeTotalCount ? size : size + 1).ToArray();
+            var hasMore = query.IncludeTotalCount
+                ? (long)page * size < filtered.LongLength
+                : rows.Length > size;
+            var items = rows.Length > size ? rows[..size] : rows;
+            return Task.FromResult(new RuntimeInstanceCatalogPage(
+                items,
+                query.IncludeTotalCount ? filtered.LongLength : -1,
+                page,
+                size,
+                hasMore));
         }
 
         public Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(

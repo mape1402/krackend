@@ -21,8 +21,16 @@ internal sealed class CompensationExecutionRepository : RuntimeRepositoryBase, I
 
     public async Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
     {
-        DetachLocalTrackedEntity(DbContext.CompensationExecutions, compensationExecution);
-        DbContext.CompensationExecutions.Update(compensationExecution);
+        // Compensation is created and enriched with its durable dispatch intent in
+        // the same orchestration activation. While the activation batch is deferred,
+        // that entity is still Added and must remain an INSERT. Calling Update here
+        // changes it to Modified, producing an UPDATE for a row that does not exist
+        // yet and an optimistic-concurrency failure at the batch commit.
+        if (DbContext.Entry(compensationExecution).State == EntityState.Detached)
+        {
+            DetachLocalTrackedEntity(DbContext.CompensationExecutions, compensationExecution);
+            DbContext.CompensationExecutions.Update(compensationExecution);
+        }
         await SaveChanges(cancellationToken);
     }
 

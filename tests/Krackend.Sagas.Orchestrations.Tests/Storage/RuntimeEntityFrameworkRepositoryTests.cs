@@ -41,6 +41,95 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task CachedExecutionStateReusesTrackedTimeoutActivationEntities()
+    {
+        await using var provider = CreateProvider(configureStorage: options =>
+            options.EmbedCurrentTransportState = true);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+
+        var now = DateTime.UtcNow;
+        var artifact = RuntimeArtifact(new SemanticVersion(6, 5, 1), RuntimeOrchestrationArtifactStatus.Ready);
+        var instance = Instance(artifact.Id, OrchestrationInstanceStatus.Running, now.AddMinutes(-5));
+        var stage = new StageExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageKey = "timeout-recovery",
+            Order = 1,
+            Status = StageExecutionStatus.Running,
+            StartedOnUtc = now.AddMinutes(-5)
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = stage.Id,
+            TaskKey = "recover.waiting-response",
+            TaskKind = TaskKind.Messaging,
+            ExecutionMode = TaskExecutionMode.Sequential,
+            Status = TaskExecutionStatus.WaitingResponse,
+            AwaitResponse = true,
+            StartedOnUtc = now.AddMinutes(-5),
+            WaitingSinceUtc = now.AddMinutes(-4),
+            ResponseDeadlineUtc = now.AddMinutes(-3),
+            LastAttemptNumber = 1
+        };
+
+        db.AddRange(artifact, instance, stage, task);
+        await db.SaveChangesAsync();
+
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = task.Id,
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.WaitingResponse,
+            StartedOnUtc = task.StartedOnUtc,
+            WaitingSinceUtc = task.WaitingSinceUtc,
+            DispatchId = task.Id
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = task.Id,
+            TaskExecutionAttemptId = task.Id,
+            DispatchType = "Messaging",
+            Destination = "recover.waiting-response",
+            DispatchStatus = "Sent",
+            CommandId = $"recover-{task.Id}",
+            ScheduledOnUtc = now.AddMinutes(-5),
+            SentOnUtc = now.AddMinutes(-5)
+        };
+        await services.GetRequiredService<ITaskExecutionAttemptRepository>().Create(attempt);
+        await services.GetRequiredService<ITaskDispatchRepository>().Create(dispatch);
+
+        db.ChangeTracker.Clear();
+        var detachedInstance = await db.OrchestrationInstances.AsNoTracking().SingleAsync(x => x.Id == instance.Id);
+        var detachedTask = await db.TaskExecutions.AsNoTracking().SingleAsync(x => x.Id == task.Id);
+        var detachedStage = await db.StageExecutions.AsNoTracking().SingleAsync(x => x.Id == stage.Id);
+        var trackedInstance = await db.OrchestrationInstances.SingleAsync(x => x.Id == instance.Id);
+        var trackedTask = await db.TaskExecutions.SingleAsync(x => x.Id == task.Id);
+        var trackedStage = await db.StageExecutions.SingleAsync(x => x.Id == stage.Id);
+
+        Assert.Same(
+            trackedInstance,
+            await services.GetRequiredService<IOrchestrationInstanceRepository>().GetById(instance.Id));
+
+        var reader = Assert.IsAssignableFrom<ITaskDispatchCachedExecutionStateReader>(
+            services.GetRequiredService<ITaskDispatchRepository>());
+
+        Assert.True(reader.TryReadCachedExecutionState(
+            detachedInstance, detachedTask, detachedStage, out var executionState));
+        Assert.Same(trackedInstance, executionState.Instance);
+        Assert.Same(trackedTask, executionState.Task);
+        Assert.Same(trackedStage, executionState.Stage);
+        Assert.Equal(task.Id, executionState.Attempt.Id);
+        Assert.Equal(task.Id, executionState.Dispatch.Id);
+    }
+
+    [Fact]
     public async Task RuntimeDependencyProbeReportsMissingFailureProjectionColumns()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -146,9 +235,13 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             ("orders", "1.0.0", OrchestrationInstanceStatus.Running, start.AddHours(5)),
             ("orders", "1.0.0", OrchestrationInstanceStatus.Completed, start.AddDays(1))
         };
-        foreach (var (key, version, status, time) in cases)
+        // Deliberately make identifier order disagree with start order. Catalog
+        // semantics are defined by StartedOnUtc, not by identifier generation.
+        var ids = Enumerable.Range(0, cases.Length).Select(_ => Id.New()).Reverse().ToArray();
+        for (var index = 0; index < cases.Length; index++)
         {
-            var instance = Instance(Id.New(), status, time);
+            var (key, version, status, time) = cases[index];
+            var instance = Instance(ids[index], status, time);
             instance.OrchestrationDefinitionKey = key; instance.OrchestrationVersion = version;
             instance.Metadata["TriggerTraceId"] = JsonValue.Create("trace-" + time.Hour);
             await repository.Create(instance);
@@ -166,6 +259,15 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal(start, Assert.Single(first.Items).StartedOnUtc);
         Assert.Equal("trace-0", Assert.Single(first.Items).Metadata["TriggerTraceId"]!.GetValue<string>());
         Assert.Equal(start.AddHours(2), Assert.Single(second.Items).StartedOnUtc);
+
+        var uncountedFirst = await catalog.GetPage(query with { IncludeTotalCount = false });
+        var uncountedSecond = await catalog.GetPage(query with { PageNumber = 2, IncludeTotalCount = false });
+        Assert.Equal(-1, uncountedFirst.TotalCount);
+        Assert.True(uncountedFirst.HasMore);
+        Assert.Single(uncountedFirst.Items);
+        Assert.Equal(-1, uncountedSecond.TotalCount);
+        Assert.False(uncountedSecond.HasMore);
+        Assert.Single(uncountedSecond.Items);
     }
 
     [Fact]
@@ -1776,6 +1878,38 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         deferral.Dispose();
 
         Assert.True(unitOfWork.AutoSaveChanges);
+    }
+
+    [Fact]
+    public async Task CompensationCreatedAndUpdatedInOneDeferredBatchRemainsAnInsert()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var repository = services.GetRequiredService<ICompensationExecutionRepository>();
+        var unitOfWork = services.GetRequiredService<IRuntimeStorageUnitOfWork>();
+        var compensation = new CompensationExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = Id.New(),
+            SourceTaskExecutionId = Id.New(),
+            CompensationTaskKey = "release-reservation",
+            Status = "Pending",
+            StartedOnUtc = DateTime.UtcNow
+        };
+
+        using (unitOfWork.DeferAutoSave())
+        {
+            await repository.Create(compensation);
+            compensation.Metadata["Runtime.Compensation.Delivery.Command"] =
+                JsonValue.Create("queued");
+            await repository.Update(compensation);
+            await unitOfWork.SaveChanges();
+        }
+
+        var persisted = await repository.TryGetById(compensation.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal("queued", persisted.Metadata["Runtime.Compensation.Delivery.Command"]!.GetValue<string>());
     }
 
     [Fact]

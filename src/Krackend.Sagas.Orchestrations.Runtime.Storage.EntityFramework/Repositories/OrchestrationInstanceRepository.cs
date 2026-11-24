@@ -91,8 +91,22 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     }
 
     public async Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
-        => await DbContext.OrchestrationInstances.AsNoTracking().FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
+    {
+        // A single activation can persist a timeout and immediately evaluate its
+        // retry/compensation decision before the outer activation batch is flushed.
+        // Its tracked aggregate is the authoritative pending state. Reading another
+        // AsNoTracking snapshot here would return the pre-activation revision, detach
+        // the pending aggregate on Update, and fail the eventual optimistic write.
+        var tracked = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instanceId);
+        if (tracked is not null)
+        {
+            return tracked;
+        }
+
+        return await DbContext.OrchestrationInstances.AsNoTracking()
+                   .FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
+               ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
+    }
 
     public async Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
         string startIdempotencyKey,
@@ -254,7 +268,9 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         var size = Math.Clamp(query.PageSize, 1, 100);
         var skip = (int)Math.Min((long)(page - 1) * size, int.MaxValue);
         var source = ApplyCatalogFilters(query);
-        var count = await source.LongCountAsync(cancellationToken);
+        var count = query.IncludeTotalCount
+            ? await source.LongCountAsync(cancellationToken)
+            : -1;
         var ordered = (query.Sort, query.Descending) switch
         {
             (RuntimeInstanceCatalogSort.Started, false) => source.OrderBy(x => x.StartedOnUtc),
@@ -270,8 +286,20 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
             _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
         };
-        var items = await ReadSummaries(ordered.ThenBy(x => x.Id).Skip(skip).Take(size), cancellationToken);
-        return new RuntimeInstanceCatalogPage(items, count, page, size);
+        // Keep the deterministic tie-breaker in the same direction as the selected
+        // sort. SQL Server memory-optimized indexes cannot reverse only one key in a
+        // composite index; mixing Started DESC with Id ASC forces a full Top-N sort.
+        var deterministic = query.Descending
+            ? ordered.ThenByDescending(x => x.Id)
+            : ordered.ThenBy(x => x.Id);
+        var rows = await ReadSummaries(
+            deterministic.Skip(skip).Take(query.IncludeTotalCount ? size : size + 1),
+            cancellationToken);
+        var hasMore = query.IncludeTotalCount
+            ? (long)page * size < count
+            : rows.Length > size;
+        var items = rows.Length > size ? rows[..size] : rows;
+        return new RuntimeInstanceCatalogPage(items, count, page, size, hasMore);
     }
 
     private static async Task<OrchestrationInstance[]> ReadSummaries(IQueryable<OrchestrationInstance> source, CancellationToken cancellationToken)

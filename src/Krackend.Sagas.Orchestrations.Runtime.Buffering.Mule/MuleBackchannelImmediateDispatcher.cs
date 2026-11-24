@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,8 @@ internal interface IMuleBackchannelImmediateDispatcher
 /// </summary>
 internal sealed class MuleBackchannelImmediateDispatcher(
     IServiceScopeFactory scopeFactory,
-    ILogger<MuleBackchannelImmediateDispatcher> logger) : BackgroundService, IMuleBackchannelImmediateDispatcher
+    ILogger<MuleBackchannelImmediateDispatcher> logger,
+    RuntimeForegroundActivity foregroundActivity) : BackgroundService, IMuleBackchannelImmediateDispatcher
 {
     private readonly ConcurrentDictionary<string, InstanceMailbox> _mailboxes =
         new(StringComparer.OrdinalIgnoreCase);
@@ -171,6 +173,7 @@ internal sealed class MuleBackchannelImmediateDispatcher(
         IReadOnlyCollection<PendingCallback> batch,
         CancellationToken cancellationToken)
     {
+        using var activity = foregroundActivity.Enter();
         var uniqueWork = batch
             .GroupBy(item => item.WorkItem.MessageMetadata?.DispatchId ??
                 $"anonymous:{RuntimeHelpers.GetHashCode(item.WorkItem)}", StringComparer.OrdinalIgnoreCase)

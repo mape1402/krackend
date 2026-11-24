@@ -79,7 +79,7 @@ public sealed class IndexModel : PageModel
         string search = null, string sort = null, bool descending = false, string status = null,
         CancellationToken cancellationToken = default, DateTimeOffset? startedFrom = null,
         DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null, string statusGroup = null,
-        string orchestrationKey = null, string orchestrationVersion = null)
+        string orchestrationKey = null, string orchestrationVersion = null, bool includeTotalCount = true)
     {
         if (_diagnosticsReader is not IRuntimeInstanceCatalogReader catalog)
             return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
@@ -115,7 +115,8 @@ public sealed class IndexModel : PageModel
                 {
                     Statuses = string.IsNullOrWhiteSpace(statusGroup) ? null : statusGroups[statusGroup],
                     OrchestrationKey = string.IsNullOrWhiteSpace(orchestrationKey) ? null : orchestrationKey.Trim(),
-                    OrchestrationVersion = string.IsNullOrWhiteSpace(orchestrationVersion) ? null : orchestrationVersion.Trim()
+                    OrchestrationVersion = string.IsNullOrWhiteSpace(orchestrationVersion) ? null : orchestrationVersion.Trim(),
+                    IncludeTotalCount = includeTotalCount
                 }, cancellationToken);
         }
         catch (NotSupportedException)
@@ -124,8 +125,9 @@ public sealed class IndexModel : PageModel
         }
         return new JsonResult(new
         {
-            items = result.Items, totalCount = result.TotalCount,
-            hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount,
+            items = result.Items,
+            totalCount = result.TotalCount < 0 ? (long?)null : result.TotalCount,
+            hasMore = result.HasMore ?? (long)result.PageNumber * result.PageSize < result.TotalCount,
             search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending, status = status ?? string.Empty
         });
     }

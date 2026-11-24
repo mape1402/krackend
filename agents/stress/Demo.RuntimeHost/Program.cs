@@ -248,6 +248,29 @@ await using (var scope = app.Services.CreateAsyncScope())
                   AND name = N'IX_OrchestrationInstances_Running_StartedOnUtc_Id')
                 EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
                     DROP INDEX [IX_OrchestrationInstances_Running_StartedOnUtc_Id];');
+
+            -- A memory-optimized nonclustered index supports only its declared
+            -- traversal direction. Without this DESC index, TOP (25) newest rows
+            -- scans and sorts the complete instance history for every grid block.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes AS i
+                JOIN sys.index_columns AS ic
+                  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                WHERE i.object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
+                  AND i.name = N'IX_OrchestrationInstances_StartedOnUtc_Id'
+                  AND ic.key_ordinal > 0
+                  AND ic.is_descending_key = 0)
+                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
+                    DROP INDEX [IX_OrchestrationInstances_StartedOnUtc_Id];');
+
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.indexes
+                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
+                  AND name = N'IX_OrchestrationInstances_StartedOnUtc_Id')
+                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
+                    ADD INDEX [IX_OrchestrationInstances_StartedOnUtc_Id]
+                    NONCLUSTERED ([StartedOnUtc] DESC, [Id] DESC);');
         END;
 
         DECLARE @runtimeTable sysname;
@@ -343,6 +366,13 @@ await using (var scope = app.Services.CreateAsyncScope())
                     ON [Runtime].[OrchestrationInstances] ([CorrelationId]);
             DROP INDEX IF EXISTS [IX_OrchestrationInstances_StartedOnUtc_Status]
                 ON [Runtime].[OrchestrationInstances];
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.indexes
+                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
+                  AND name = N'IX_OrchestrationInstances_StartedOnUtc_Id')
+                CREATE INDEX [IX_OrchestrationInstances_StartedOnUtc_Id]
+                    ON [Runtime].[OrchestrationInstances] ([StartedOnUtc] DESC, [Id] DESC)
+                    WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
             DROP INDEX IF EXISTS [IX_OrchestrationInstances_ExpiresOnUtc_Id]
                 ON [Runtime].[OrchestrationInstances];
             DROP INDEX IF EXISTS [IX_OrchestrationInstances_Status_ExpiresOnUtc_Id]

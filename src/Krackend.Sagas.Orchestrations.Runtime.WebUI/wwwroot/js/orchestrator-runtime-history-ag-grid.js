@@ -34,6 +34,7 @@
         const url = new URL(root.dataset.source, location.href);
         url.searchParams.set('page', String(Math.floor(start / 25) + 1));
         url.searchParams.set('pageSize', '25');
+        url.searchParams.set('includeTotalCount', 'false');
         if (active.from) url.searchParams.set('startedFrom', `${active.from}T00:00:00Z`);
         // There is no representable .NET instant after the last day of year 9999.
         if (active.through && active.through !== '9999-12-31') {
@@ -57,10 +58,13 @@
             if (!response.ok) throw new Error('History unavailable');
             const result = await response.json();
             if (closed || revision !== requestRevision) { params.failCallback(); return; }
-            params.successCallback(result.items, Number(result.totalCount));
-            count.textContent = `${Number(result.totalCount).toLocaleString()} matching instances`;
+            const lastRow = result.hasMore === false ? params.startRow + result.items.length : undefined;
+            params.successCallback(result.items, lastRow);
+            count.textContent = result.totalCount == null
+                ? `${(params.startRow + result.items.length).toLocaleString()}${result.hasMore ? '+' : ''} matching instances`
+                : `${Number(result.totalCount).toLocaleString()} matching instances`;
             const versionNote = active.version ? 'Instances without a recorded version cannot match the version filter.' : '';
-            message.textContent = result.totalCount ? versionNote : ['No instances match these filters.', versionNote].filter(Boolean).join(' ');
+            message.textContent = result.items.length ? versionNote : ['No instances match these filters.', versionNote].filter(Boolean).join(' ');
         } catch (exception) {
             params.failCallback();
             if (!closed && revision === requestRevision && exception.name !== 'AbortError') {

@@ -14,9 +14,9 @@ Krackend runtime libraries, hosts, and samples target .NET 10. Applications cons
 
 ## Version 6.5 highlights
 
-`v6.5.0` isolates instance-lease renewal from the saga's EF context, prevents independently scoped work from inheriting another scope's lease, and allows healthy trigger and backchannel intake during periodic reconciliation. Scheduled Mule notifications no longer retain the originating saga's execution context. Mule dependencies are updated to 2.3.2.
+`v6.5.1` keeps the parallel Runtime fast path introduced in 6.5 while repairing overdue instances through a bounded parallel reconciliation pass that yields to live traffic. Timeout, retry, compensation, and stop decisions reuse the authoritative state tracked by the active saga mutation, including compensation records created and dispatched in one commit. Runtime dashboards retain their canonical-state fallback, while Instances and History use uncounted server paging and a newest-first index instead of scanning the complete history. No direct data repair is required.
 
-No database migration is added; hosts continue to choose and configure their EF providers. Mule 2.3.2 does not include the separate fix for a Redis FastLane terminal action whose durable record is missing.
+No database columns or data migration are added; existing SQL Server memory-optimized databases should reconcile the descending `StartedOnUtc, Id` catalog index when upgrading. Hosts continue to choose and configure their EF providers. Mule 2.3.2 does not include the separate fix for a Redis FastLane terminal action whose durable record is missing.
 
 ## Version 6.4 highlights
 

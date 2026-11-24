@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.5.1] - 2026-11-23
+
+### Changed
+
+- Keep independent orchestration activations fully parallel while batching each activation into one storage commit and allowing durable dispatch work to continue after the instance lease is released.
+- Repair overdue response timeouts in bounded parallel instance groups while yielding immediately to live trigger, callback, and diagnostic traffic.
+- Page Runtime instance and history grids without an exact-count scan on every block request.
+- Add fixed and variable sustained-load profiles with burst, trend, percentile, and end-to-end drain reporting.
+
+### Fixed
+
+- Recover overdue response timeouts without attaching a second copy of an entity already tracked by the active saga mutation.
+- Reuse the authoritative tracked orchestration aggregate throughout timeout, retry, compensation, and stop decisions, preventing stale revisions from aborting recovery.
+- Preserve a newly created compensation as an insert when its durable dispatch intent is enriched in the same deferred activation batch, preventing endless recovery conflicts.
+- Align newest-first instance paging with a descending `StartedOnUtc, Id` index so SQL Server memory-optimized storage no longer scans and sorts the complete history for each 25-row grid block.
+- Preserve Runtime dashboard data when asynchronous statistics projection is disabled by falling back to canonical execution state, and bound successful history retention outside the hot path.
+
+### Upgrade notes
+
+- This release adds no database fields or data migration. SQL Server memory-optimized hosts should create or rebuild `IX_OrchestrationInstances_StartedOnUtc_Id` as descending on both keys; the demo Runtime host reconciles it automatically at startup. Existing overdue instances are repaired by the normal bounded Runtime reconciliation pass after deployment; no direct data update is required.
+
+------
+
 ## [v6.5.0] - 2026-11-18
 
 ### Changed

@@ -40,10 +40,22 @@ public sealed record RuntimeInstanceCatalogQuery(
 
     /// <summary>Optional exact projected orchestration version.</summary>
     public string OrchestrationVersion { get; init; }
+
+    /// <summary>
+    /// Gets whether the page must wait for an exact count of every matching row.
+    /// Interactive grids can disable this and use <see cref="RuntimeInstanceCatalogPage.HasMore"/>
+    /// to render the first page without a full aggregate scan.
+    /// </summary>
+    public bool IncludeTotalCount { get; init; } = true;
 }
 
 /// <summary>Supported instance ordering fields.</summary>
 public enum RuntimeInstanceCatalogSort { Updated, Started, Orchestration, CorrelationId, SagaId, Status }
 
 /// <summary>One page and the number of matching instances.</summary>
-public sealed record RuntimeInstanceCatalogPage(IReadOnlyCollection<OrchestrationInstance> Items, long TotalCount, int PageNumber, int PageSize);
+public sealed record RuntimeInstanceCatalogPage(
+    IReadOnlyCollection<OrchestrationInstance> Items,
+    long TotalCount,
+    int PageNumber,
+    int PageSize,
+    bool? HasMore = null);

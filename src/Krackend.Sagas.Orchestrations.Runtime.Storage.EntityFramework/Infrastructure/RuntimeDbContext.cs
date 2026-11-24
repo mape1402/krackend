@@ -360,7 +360,11 @@ public sealed class RuntimeDbContext : DbContext
         // a live dashboard into repeated table scans competing with saga commits.
         // StartedOnUtc never changes, so this index is maintained only on ingress.
         builder.HasIndex(x => new { x.StartedOnUtc, x.Id })
-            .HasDatabaseName("IX_OrchestrationInstances_StartedOnUtc_Id");
+            .HasDatabaseName("IX_OrchestrationInstances_StartedOnUtc_Id")
+            // Memory-optimized nonclustered indexes cannot be scanned in reverse.
+            // The live catalogs show newest instances first, so their physical
+            // index direction must match that query exactly.
+            .IsDescending(true, true);
         builder.HasIndex(x => new { x.StartedOnUtc, x.Id })
             .HasDatabaseName("IX_OrchestrationInstances_Running_StartedOnUtc_Id")
             .HasFilter("[Status] = 'Running'");

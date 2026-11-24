@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 
@@ -25,6 +26,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly ICompensationExecutionRepository _compensationRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
+    private readonly RuntimeForegroundActivity _foregroundActivity;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeDiagnosticsReader"/> class.
@@ -37,7 +39,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         ITaskExecutionAttemptRepository attemptRepository,
         ITaskDispatchRepository dispatchRepository,
         ICompensationExecutionRepository compensationRepository,
-        IExecutionTransitionRepository transitionRepository)
+        IExecutionTransitionRepository transitionRepository,
+        IServiceProvider serviceProvider = null)
     {
         _runtimeArtifactRepository = runtimeArtifactRepository;
         _instanceRepository = instanceRepository;
@@ -47,11 +50,14 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         _dispatchRepository = dispatchRepository;
         _compensationRepository = compensationRepository;
         _transitionRepository = transitionRepository;
+        _foregroundActivity = serviceProvider?.GetService(typeof(RuntimeForegroundActivity))
+            as RuntimeForegroundActivity;
     }
 
     /// <inheritdoc />
     public async Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
     {
+        using var activity = _foregroundActivity?.Enter();
         var summary = await BuildRuntimeSummary(cancellationToken);
         var instances = _instanceRepository is IRuntimeInstanceRecentSummaryReader summaries
             ? await summaries.GetRecentSummaries(1000, cancellationToken)
@@ -70,6 +76,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     /// <inheritdoc />
     public async Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
     {
+        using var activity = _foregroundActivity?.Enter();
         var summary = await BuildRuntimeSummary(cancellationToken);
         var nowUtc = DateTime.UtcNow;
         var traffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-1), cancellationToken);
@@ -84,21 +91,23 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     /// <inheritdoc />
     public async Task<RuntimeInstancePageModel> GetInstances(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {
+        using var activity = _foregroundActivity?.Enter();
         if (_instanceRepository is not IRuntimeInstanceCatalogRepository catalog)
             throw new NotSupportedException("The configured runtime storage does not support paged instance diagnostics.");
 
         var result = await catalog.GetPage(query, cancellationToken);
         return new RuntimeInstancePageModel(result.Items.Select(x => ToRow(x)).ToArray(),
-            result.TotalCount, result.PageNumber, result.PageSize);
+            result.TotalCount, result.PageNumber, result.PageSize, result.HasMore);
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(
+    public async Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(
         RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {
+        using var activity = _foregroundActivity?.Enter();
         if (_instanceRepository is not IRuntimeInstanceStatusCountsRepository counts)
             throw new NotSupportedException("The configured runtime storage does not support scoped instance counts.");
-        return counts.GetStatusCounts(query, cancellationToken);
+        return await counts.GetStatusCounts(query, cancellationToken);
     }
 
     /// <inheritdoc />

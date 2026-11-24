@@ -1350,6 +1350,7 @@ public sealed class MessagingDecisionE2ETests
         var command = harness.Dispatcher.Commands.Single();
         var task = await harness.GetTaskAsync(command);
         var processor = harness.GetRequiredService<IOrchestrationTimeoutProcessor>();
+        unitOfWork.Operations.Clear();
 
         await processor.ProcessDueTimeoutsAsync(task.WaitingSinceUtc!.Value.AddSeconds(2));
 
@@ -2838,6 +2839,8 @@ public sealed class MessagingDecisionE2ETests
     private sealed class RecordingTimeoutStorageUnitOfWork : IRuntimeStorageUnitOfWork
     {
         public List<string> Operations { get; } = [];
+
+        public bool PreferBatchedEngineActivations => false;
 
         public bool AutoSaveChanges => true;
 

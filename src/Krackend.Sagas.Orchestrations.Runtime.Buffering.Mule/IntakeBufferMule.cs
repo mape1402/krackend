@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Diagnostics;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
@@ -21,6 +22,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly ITaskDispatchRepository? _dispatches;
         private readonly IMuleBackchannelImmediateDispatcher? _immediateBackchannels;
         private readonly ISagaEngine? _sagaEngine;
+        private readonly RuntimeForegroundActivity? _foregroundActivity;
 
         public IntakeBufferMule(
             IMuleClient muleClient,
@@ -29,7 +31,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IOrchestrationInstanceCoordinator coordinator,
             ITaskDispatchRepository? dispatches = null,
             IMuleBackchannelImmediateDispatcher? immediateBackchannels = null,
-            ISagaEngine? sagaEngine = null)
+            ISagaEngine? sagaEngine = null,
+            RuntimeForegroundActivity? foregroundActivity = null)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
             _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
@@ -38,10 +41,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _dispatches = dispatches;
             _immediateBackchannels = immediateBackchannels;
             _sagaEngine = sagaEngine;
+            _foregroundActivity = foregroundActivity;
         }
 
         public async Task EnqueueWorkAsync(WorkItem workItem, CancellationToken cancellationToken = default)
         {
+            using var activity = _foregroundActivity?.Enter();
             var started = Stopwatch.GetTimestamp();
             try { await EnqueueWorkCoreAsync(workItem, cancellationToken); }
             finally

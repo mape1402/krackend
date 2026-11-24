@@ -15,6 +15,24 @@ public sealed class OrchestrationTimeoutOptions
     /// </summary>
     public int ScanIntervalSeconds { get; set; } = 5;
 
+    /// <summary>
+    /// Gets or sets the maximum number of overdue waits considered by one recovery scan.
+    /// The scanner still yields between candidates when realtime ingress is active.
+    /// </summary>
+    public int RecoveryBatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Gets or sets the number of unrelated orchestration instances that bulk
+    /// timeout recovery may repair concurrently.
+    /// </summary>
+    public int RecoveryMaxDegreeOfParallelism { get; set; } = 8;
+
+    /// <summary>
+    /// Gets or sets how long bulk recovery waits after realtime ingress becomes quiet.
+    /// This protects foreground latency without reducing foreground parallelism.
+    /// </summary>
+    public int RecoveryQuietPeriodMilliseconds { get; set; } = 250;
+
     /// <summary>Default maximum lifetime in seconds. Zero disables the default.</summary>
     public int DefaultInstanceLifetimeSeconds { get; set; } = 86400;
 

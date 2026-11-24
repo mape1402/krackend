@@ -12,6 +12,8 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 
@@ -34,6 +36,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
     private readonly IOrchestrationDurableWorkInspector _workInspector;
     private readonly OrchestrationTimeoutRepairCursor _repairCursor;
+    private readonly RuntimeForegroundActivity _foregroundActivity;
+    private readonly OrchestrationTimeoutOptions _timeoutOptions;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<DefaultOrchestrationTimeoutProcessor> _logger;
 
     public DefaultOrchestrationTimeoutProcessor(
@@ -50,7 +55,10 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         IRuntimeStorageUnitOfWork unitOfWork,
         IOrchestrationDurableWorkInspector workInspector = null,
         OrchestrationTimeoutRepairCursor repairCursor = null,
-        ILogger<DefaultOrchestrationTimeoutProcessor> logger = null)
+        ILogger<DefaultOrchestrationTimeoutProcessor> logger = null,
+        RuntimeForegroundActivity foregroundActivity = null,
+        IOptions<OrchestrationTimeoutOptions> timeoutOptions = null,
+        IServiceScopeFactory serviceScopeFactory = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -66,16 +74,25 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         _workInspector = workInspector;
         _repairCursor = repairCursor ?? new OrchestrationTimeoutRepairCursor();
         _logger = logger ?? NullLogger<DefaultOrchestrationTimeoutProcessor>.Instance;
+        _foregroundActivity = foregroundActivity ?? new RuntimeForegroundActivity();
+        _timeoutOptions = timeoutOptions?.Value ?? new OrchestrationTimeoutOptions();
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     public async Task<int> ProcessDueTimeoutsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
     {
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
 
+        if (ShouldYieldRecovery())
+            return 0;
+
         await _repairCursor.Gate.WaitAsync(cancellationToken);
         try
         {
-            const int take = 100;
+            if (ShouldYieldRecovery())
+                return 0;
+
+            var take = Math.Clamp(_timeoutOptions.RecoveryBatchSize, 1, 1_000);
             var pageReader = _taskRepository as IResponseTimeoutRepairPageReader;
             if (pageReader is null && !_repairCursor.WarnedMissingPaging)
             {
@@ -87,28 +104,187 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
                 : await pageReader.GetResponseTimeoutsDuePage(utcNow, _repairCursor.DueOffset, take, cancellationToken);
             var processed = 0;
             var unresolved = 0;
-            var batch = new OrchestrationTimeoutBatchContext();
-            foreach (var waitingTask in waitingTasks)
+            var groups = waitingTasks
+                .GroupBy(task => task.OrchestrationInstanceId)
+                .ToArray();
+            var maxParallelism = Math.Clamp(
+                _timeoutOptions.RecoveryMaxDegreeOfParallelism,
+                1,
+                64);
+
+            if (_serviceScopeFactory is null || maxParallelism == 1)
             {
-                try
+                var batch = new OrchestrationTimeoutBatchContext();
+                foreach (var group in groups)
                 {
-                    var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, batch, cancellationToken);
-                    if (result.Applied) processed++;
-                    else unresolved++;
+                    foreach (var waitingTask in group)
+                    {
+                        if (ShouldYieldRecovery())
+                            break;
+                        await ProcessCandidateAsync(
+                            this,
+                            batch,
+                            waitingTask,
+                            utcNow,
+                            cancellationToken,
+                            applied => processed += applied ? 1 : 0,
+                            ignored => unresolved += ignored ? 1 : 0);
+                    }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception exception)
-                {
-                    unresolved++;
-                    _logger.LogWarning(exception, "Could not process overdue response timeout for task '{TaskId}'.", waitingTask.Id);
-                }
+            }
+            else
+            {
+                await Parallel.ForEachAsync(
+                    groups,
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = maxParallelism,
+                        CancellationToken = cancellationToken
+                    },
+                    async (group, token) =>
+                    {
+                        if (ShouldYieldRecovery())
+                            return;
+
+                        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+                        var scopedProcessor = scope.ServiceProvider
+                            .GetRequiredService<IOrchestrationTimeoutProcessor>();
+                        var batch = new OrchestrationTimeoutBatchContext();
+                        foreach (var waitingTask in group)
+                        {
+                            if (ShouldYieldRecovery())
+                                break;
+                            await ProcessCandidateAsync(
+                                scopedProcessor,
+                                batch,
+                                waitingTask,
+                                utcNow,
+                                token,
+                                applied =>
+                                {
+                                    if (applied) Interlocked.Increment(ref processed);
+                                },
+                                ignored =>
+                                {
+                                    if (ignored) Interlocked.Increment(ref unresolved);
+                                });
+                        }
+                    });
             }
             if (pageReader is not null)
                 _repairCursor.DueOffset = waitingTasks.Count < take || unresolved > int.MaxValue - _repairCursor.DueOffset
                     ? 0 : _repairCursor.DueOffset + unresolved;
             return processed;
+
+            async Task ProcessCandidateAsync(
+                IOrchestrationTimeoutProcessor processor,
+                OrchestrationTimeoutBatchContext batch,
+                TaskExecution waitingTask,
+                DateTime observedOnUtc,
+                CancellationToken token,
+                Action<bool> recordApplied,
+                Action<bool> recordIgnored)
+            {
+                Exception failure = null;
+                for (var attempt = 0; attempt < 3; attempt++)
+                {
+                    IServiceScope retryScope = null;
+                    try
+                    {
+                        var currentProcessor = processor;
+                        if (attempt > 0 && _serviceScopeFactory is not null)
+                        {
+                            retryScope = _serviceScopeFactory.CreateScope();
+                            currentProcessor = retryScope.ServiceProvider
+                                .GetRequiredService<IOrchestrationTimeoutProcessor>();
+                        }
+
+                        var result = currentProcessor is IOrchestrationTimeoutBatchProcessor batchProcessor
+                            ? await batchProcessor.ProcessTaskTimeoutAsync(
+                                waitingTask.Id,
+                                observedOnUtc,
+                                batch,
+                                token)
+                            : await currentProcessor.ProcessTaskTimeoutAsync(
+                                waitingTask.Id,
+                                observedOnUtc,
+                                token);
+                        recordApplied(result.Applied);
+                        recordIgnored(!result.Applied);
+                        return;
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception) when (
+                        attempt < 2 && _serviceScopeFactory is not null && IsOptimisticConflict(exception))
+                    {
+                        failure = exception;
+                        if (ShouldYieldRecovery())
+                            return;
+                        await Task.Yield();
+                    }
+                    catch (Exception exception)
+                    {
+                        failure = exception;
+                        break;
+                    }
+                    finally
+                    {
+                        retryScope?.Dispose();
+                    }
+                }
+
+                recordIgnored(true);
+                _logger.LogWarning(failure,
+                    "Could not process overdue response timeout for task '{TaskId}' after bounded conflict recovery. Conflicting entities: {ConflictEntities}.",
+                    waitingTask.Id,
+                    DescribeOptimisticConflict(failure));
+            }
         }
         finally { _repairCursor.Gate.Release(); }
+    }
+
+    private bool ShouldYieldRecovery()
+        => _foregroundActivity.ShouldYieldRecovery(TimeSpan.FromMilliseconds(Math.Clamp(
+            _timeoutOptions.RecoveryQuietPeriodMilliseconds,
+            0,
+            60_000)));
+
+    private static bool IsOptimisticConflict(Exception exception)
+        => exception is RuntimeStateConflictException ||
+           string.Equals(
+               exception.GetType().FullName,
+               "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException",
+               StringComparison.Ordinal) ||
+           exception.InnerException is not null && IsOptimisticConflict(exception.InnerException);
+
+    private static string DescribeOptimisticConflict(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (!string.Equals(
+                    current.GetType().FullName,
+                    "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException",
+                    StringComparison.Ordinal))
+                continue;
+
+            if (current.GetType().GetProperty("Entries")?.GetValue(current)
+                is not System.Collections.IEnumerable entries)
+                return "unknown";
+
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in entries)
+            {
+                var entity = entry?.GetType().GetProperty("Entity")?.GetValue(entry);
+                if (entity is not null)
+                    names.Add(entity.GetType().Name);
+            }
+            return names.Count == 0 ? "unknown" : string.Join(", ", names.Order());
+        }
+
+        return exception.GetType().Name;
     }
 
     public async Task ResumeTimedOutAsync(Id instanceId, Id taskId, Id attemptId, Id dispatchId, int attemptNumber,

@@ -83,6 +83,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
             services.TryAddScoped<IRuntimeStateTransaction, RuntimeStateTransaction>();
             services.TryAddSingleton<OrchestrationTimeoutRepairCursor>();
+            services.TryAddSingleton<RuntimeForegroundActivity>();
             services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
             services.TryAddScoped<IOrchestrationConditionEvaluator, DefaultOrchestrationConditionEvaluator>();
             services.TryAddScoped<IOrchestrationBranchNavigator, DefaultOrchestrationBranchNavigator>();

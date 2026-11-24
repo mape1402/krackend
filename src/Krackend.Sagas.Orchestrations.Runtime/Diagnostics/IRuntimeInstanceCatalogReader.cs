@@ -10,4 +10,9 @@ public interface IRuntimeInstanceCatalogReader
 }
 
 /// <summary>A page of runtime instance diagnostic rows.</summary>
-public sealed record RuntimeInstancePageModel(IReadOnlyCollection<InstanceRowModel> Items, long TotalCount, int PageNumber, int PageSize);
+public sealed record RuntimeInstancePageModel(
+    IReadOnlyCollection<InstanceRowModel> Items,
+    long TotalCount,
+    int PageNumber,
+    int PageSize,
+    bool? HasMore = null);

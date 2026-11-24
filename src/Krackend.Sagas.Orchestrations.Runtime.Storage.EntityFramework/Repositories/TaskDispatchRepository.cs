@@ -536,8 +536,21 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         if (!_embedCurrentTransportState ||
             instance is null ||
             task is null ||
-            stage is null ||
-            task.OrchestrationInstanceId != instance.Id ||
+            stage is null)
+        {
+            return false;
+        }
+
+        // A timeout activation can load the aggregate through the normal tracked
+        // mutation path while the recovery snapshot was read with AsNoTracking.
+        // Reuse the lease-protected tracked entities when they already exist. An
+        // Attach of the detached snapshot would otherwise throw for the duplicate
+        // key and leave the task in WaitingResponse forever.
+        instance = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instance.Id) ?? instance;
+        task = DbContext.TaskExecutions.Local.FirstOrDefault(x => x.Id == task.Id) ?? task;
+        stage = DbContext.StageExecutions.Local.FirstOrDefault(x => x.Id == stage.Id) ?? stage;
+
+        if (task.OrchestrationInstanceId != instance.Id ||
             task.StageExecutionId != stage.Id ||
             !EmbeddedTaskTransportState.TryReadAttempt(task, out var attempt) ||
             !EmbeddedTaskTransportState.TryReadDispatch(task, out var dispatch) ||
