@@ -182,14 +182,21 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         if (pageReader is not null)
             _repairCursor.DueOffset = NextOffset(_repairCursor.DueOffset, unresolvedDue, overdue.Count, limit);
 
+        // Apply the same repair horizon in storage. Filtering after materialization
+        // made SQL Server scan every historical task on each repair pass even when
+        // no orchestration was waiting for a response.
+        var repairHorizon = DateTime.UtcNow.Add(MissingActionRepairLeadTime);
         var missing = pageReader is null
             ? await _tasks.GetResponseTimeoutsMissingAction(limit, cancellationToken)
-            : await pageReader.GetResponseTimeoutsMissingActionPage(_repairCursor.MissingActionOffset, limit, cancellationToken);
+            : await pageReader.GetResponseTimeoutsMissingActionPage(
+                repairHorizon,
+                _repairCursor.MissingActionOffset,
+                limit,
+                cancellationToken);
         // A deterministic Mule key replaces the SQL action-id write on the healthy
         // path. Consequently a null SQL reference no longer means failure. Inspect
         // Redis only shortly before the deadline; fresh real-time work must never be
         // turned back into a five-second polling loop.
-        var repairHorizon = DateTime.UtcNow.Add(MissingActionRepairLeadTime);
         missing = missing
             .Where(task => task.ResponseDeadlineUtc <= repairHorizon)
             .ToArray();

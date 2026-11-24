@@ -216,6 +216,48 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task MissingTimeoutActionRepairAppliesDeadlineHorizonBeforePaging()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var now = DateTime.UtcNow;
+        var activeInstance = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-1));
+        var terminalInstance = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now.AddMinutes(-1));
+        db.OrchestrationInstances.AddRange(activeInstance, terminalInstance);
+        var stageId = Id.New();
+        var withinHorizon = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = activeInstance.Id, StageExecutionId = stageId,
+            TaskKey = "within-horizon", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now, ResponseDeadlineUtc = now.AddSeconds(5)
+        };
+        var beyondHorizon = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = activeInstance.Id, StageExecutionId = stageId,
+            TaskKey = "beyond-horizon", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now, ResponseDeadlineUtc = now.AddHours(1)
+        };
+        var terminal = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = terminalInstance.Id, StageExecutionId = stageId,
+            TaskKey = "terminal", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now, ResponseDeadlineUtc = now.AddSeconds(5)
+        };
+        db.TaskExecutions.AddRange(withinHorizon, beyondHorizon, terminal);
+        await db.SaveChangesAsync();
+
+        var reader = Assert.IsAssignableFrom<IResponseTimeoutRepairPageReader>(
+            scope.ServiceProvider.GetRequiredService<ITaskExecutionRepository>());
+        var page = await reader.GetResponseTimeoutsMissingActionPage(now.AddSeconds(10), 0, 25);
+
+        Assert.Equal(withinHorizon.Id, Assert.Single(page).Id);
+    }
+
+    [Fact]
     public async Task CatalogFiltersProjectedScopeStatusAndUtcDatesBeforePaging()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

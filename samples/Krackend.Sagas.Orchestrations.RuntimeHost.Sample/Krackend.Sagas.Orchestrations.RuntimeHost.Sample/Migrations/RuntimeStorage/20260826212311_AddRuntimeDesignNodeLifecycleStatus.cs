@@ -19,12 +19,16 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                 nullable: false,
                 defaultValue: "Pending");
 
+            // Dynamic SQL keeps idempotent scripts valid when ALTER TABLE and the
+            // backfill share a SQL Server batch.
             migrationBuilder.Sql("""
-                UPDATE [Runtime].[RuntimeDesignNodes]
-                SET [Status] = CASE
-                    WHEN [IsEnabled] = CAST(1 AS bit) THEN N'Enabled'
-                    ELSE N'Suspend'
-                END
+                EXEC(N'
+                    UPDATE [Runtime].[RuntimeDesignNodes]
+                    SET [Status] = CASE
+                        WHEN [IsEnabled] = CAST(1 AS bit) THEN N''Enabled''
+                        ELSE N''Suspend''
+                    END
+                ')
                 """);
 
             migrationBuilder.CreateIndex(

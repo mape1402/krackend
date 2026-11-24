@@ -1,6 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
-using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Options;

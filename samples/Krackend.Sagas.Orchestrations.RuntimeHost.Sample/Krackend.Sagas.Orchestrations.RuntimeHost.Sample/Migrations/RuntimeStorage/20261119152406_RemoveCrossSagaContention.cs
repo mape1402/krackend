@@ -76,10 +76,12 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
             // Existing routes remain readable through the null projection fallback.
             // Backfill valid messaging settings before enabling the selective index.
             migrationBuilder.Sql("""
-                UPDATE [Runtime].[RuntimeIngressConfigurations]
-                SET [RouteTopic] = UPPER(COALESCE(JSON_VALUE([SettingsPayload], '$.topic'), JSON_VALUE([SettingsPayload], '$.Topic'))),
-                    [RouteVersion] = UPPER(COALESCE(JSON_VALUE([SettingsPayload], '$.version'), JSON_VALUE([SettingsPayload], '$.Version')))
-                WHERE [IngressTransport] = 'Messaging' AND ISJSON([SettingsPayload]) = 1;
+                EXEC(N'
+                    UPDATE [Runtime].[RuntimeIngressConfigurations]
+                    SET [RouteTopic] = UPPER(COALESCE(JSON_VALUE([SettingsPayload], ''$.topic''), JSON_VALUE([SettingsPayload], ''$.Topic''))),
+                        [RouteVersion] = UPPER(COALESCE(JSON_VALUE([SettingsPayload], ''$.version''), JSON_VALUE([SettingsPayload], ''$.Version'')))
+                    WHERE [IngressTransport] = ''Messaging'' AND ISJSON([SettingsPayload]) = 1;
+                ')
                 """);
 
             migrationBuilder.CreateIndex(

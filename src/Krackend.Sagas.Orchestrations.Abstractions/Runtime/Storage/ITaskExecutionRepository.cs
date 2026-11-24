@@ -62,9 +62,16 @@ public interface IResponseTimeoutRepairPageReader
     Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDuePage(
         DateTime dueBeforeUtc, int skip, int take, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads a page of response waits without a captured timer.</summary>
+    /// <summary>
+    /// Reads a page of response waits without a captured timer whose deadline is
+    /// within the repair horizon. Applying the horizon in storage prevents durable
+    /// recovery from scanning every historical task before filtering in memory.
+    /// </summary>
     Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
-        int skip, int take, CancellationToken cancellationToken = default);
+        DateTime dueOnOrBeforeUtc,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Reads tasks from only the stage being advanced.</summary>
