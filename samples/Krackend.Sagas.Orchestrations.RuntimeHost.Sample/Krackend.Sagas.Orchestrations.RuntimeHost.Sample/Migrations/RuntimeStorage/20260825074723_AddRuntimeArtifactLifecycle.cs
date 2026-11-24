@@ -57,12 +57,17 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                 nullable: false,
                 defaultValue: "Pending");
 
+            // Keep the data update behind dynamic SQL. EF's idempotent script puts
+            // the preceding ALTER TABLE statements in the same batch, so a direct
+            // UPDATE would be compiled before SQL Server sees the new columns.
             migrationBuilder.Sql("""
-                UPDATE [Runtime].[RuntimeOrchestrationArtifacts]
-                SET [IngressGeneration] = 1,
-                    [Status] = CASE WHEN [IsActive] = 1 THEN N'Ready' ELSE N'Retired' END,
-                    [ProjectionCompletedOnUtc] = CASE WHEN [IsActive] = 1 THEN COALESCE([ActivatedOnUtc], [DeployedOnUtc]) ELSE NULL END,
-                    [ActivatedOnUtc] = CASE WHEN [IsActive] = 1 THEN COALESCE([ActivatedOnUtc], [DeployedOnUtc]) ELSE [ActivatedOnUtc] END
+                EXEC(N'
+                    UPDATE [Runtime].[RuntimeOrchestrationArtifacts]
+                    SET [IngressGeneration] = 1,
+                        [Status] = CASE WHEN [IsActive] = 1 THEN N''Ready'' ELSE N''Retired'' END,
+                        [ProjectionCompletedOnUtc] = CASE WHEN [IsActive] = 1 THEN COALESCE([ActivatedOnUtc], [DeployedOnUtc]) ELSE NULL END,
+                        [ActivatedOnUtc] = CASE WHEN [IsActive] = 1 THEN COALESCE([ActivatedOnUtc], [DeployedOnUtc]) ELSE [ActivatedOnUtc] END
+                ')
                 """);
 
             migrationBuilder.CreateIndex(

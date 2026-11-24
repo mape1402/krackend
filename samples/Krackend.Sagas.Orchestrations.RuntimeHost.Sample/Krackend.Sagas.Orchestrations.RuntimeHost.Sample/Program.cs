@@ -6,10 +6,10 @@ using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
-using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WolfAuth;
 using Microsoft.AspNetCore.Authentication;
@@ -28,7 +28,23 @@ var serviceBusConnectionString =
     builder.Configuration["Pigeon:MessageBrokers:AzureServiceBus:ConnectionString"];
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
+var fastLaneEnabled = builder.Configuration.GetValue("Runtime:Mule:FastLane:Enabled", false);
+if (fastLaneEnabled && string.IsNullOrWhiteSpace(redisConnectionString))
+    throw new InvalidOperationException(
+        "ConnectionStrings:Redis is required when Runtime:Mule:FastLane:Enabled is true.");
 var fastLaneKeyPrefix = builder.Configuration["Runtime:Mule:FastLane:KeyPrefix"] ?? "krackend:runtime";
+var fastLaneIntentFlushSize = Math.Clamp(
+    builder.Configuration.GetValue("Runtime:Mule:FastLane:IntentFlushSize", 1_000),
+    1,
+    10_000);
+var fastLaneCompletionFlushSize = Math.Clamp(
+    builder.Configuration.GetValue("Runtime:Mule:FastLane:CompletionFlushSize", 2_000),
+    1,
+    20_000);
+var fastLaneFlushInterval = TimeSpan.FromMilliseconds(Math.Clamp(
+    builder.Configuration.GetValue("Runtime:Mule:FastLane:FlushIntervalMilliseconds", 100),
+    1,
+    1_000));
 var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
 
 if (string.IsNullOrWhiteSpace(redisConnectionString))
@@ -92,16 +108,19 @@ builder.Services
         mule =>
         {
             mule.UseEntityFrameworkCore<RuntimeDbContext>();
-            mule.UseFastLaneRedis(options =>
+            if (fastLaneEnabled)
             {
-                options.ConnectionString = redisConnectionString;
-                options.KeyPrefix = fastLaneKeyPrefix;
-                options.IntentFlushSize = 1_000;
-                options.CompletionFlushSize = 2_000;
-                options.FlushInterval = TimeSpan.FromMilliseconds(25);
-                options.LeaseDuration = TimeSpan.FromMinutes(2);
-                options.DeduplicationRetention = TimeSpan.FromDays(7);
-            });
+                mule.UseFastLaneRedis(options =>
+                {
+                    options.ConnectionString = redisConnectionString;
+                    options.KeyPrefix = fastLaneKeyPrefix;
+                    options.IntentFlushSize = fastLaneIntentFlushSize;
+                    options.CompletionFlushSize = fastLaneCompletionFlushSize;
+                    options.FlushInterval = fastLaneFlushInterval;
+                    options.LeaseDuration = TimeSpan.FromMinutes(2);
+                    options.DeduplicationRetention = TimeSpan.FromDays(7);
+                });
+            }
             mule.Configure(settings =>
             {
                 settings.ImmediateDispatch = true;
@@ -113,14 +132,22 @@ builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+var applyMigrationsOnStartup = builder.Configuration.GetValue(
+    "Runtime:Storage:ApplyMigrationsOnStartup",
+    false);
+var seedHappyPath = builder.Configuration.GetValue("SeedData:HappyPath:Enabled", false);
+if (applyMigrationsOnStartup || seedHappyPath)
 {
+    using var scope = app.Services.CreateScope();
     var migrationLock = scope.ServiceProvider.GetRequiredService<IDatabaseMigrationLock>();
     var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
-    await using var migrationLease = await migrationLock.AcquireAsync(muleConnectionString!);
-    await dbContext.Database.MigrateAsync();
+    if (applyMigrationsOnStartup)
+    {
+        await using var migrationLease = await migrationLock.AcquireAsync(muleConnectionString!);
+        await dbContext.Database.MigrateAsync();
+    }
 
-    if (builder.Configuration.GetValue("SeedData:HappyPath:Enabled", true))
+    if (seedHappyPath)
     {
         var happyPathSeeder = scope.ServiceProvider.GetRequiredService<IHappyPathOrchestrationSeeder>();
         await happyPathSeeder.SeedAsync();

@@ -8,9 +8,8 @@
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.ButterMorph/Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
     <PackageReference Include="Pigeon.Messaging.Rabbit" />
-    <PackageReference Include="Mule.DurableActions.Redis" />
+    <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
-    <Compile Include="../../../samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Storage/RuntimeSqlServerStorageModelCustomizer.cs" Link="RuntimeSqlServerStorageModelCustomizer.cs" />
   </ItemGroup>
 </Project>
 

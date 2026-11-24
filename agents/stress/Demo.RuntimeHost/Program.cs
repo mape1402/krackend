@@ -4,21 +4,20 @@ using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.ButterMorph.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
-using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Mule;
-using Mule.Redis;
+using Mule.EntityFrameworkCore;
+using Mule.FastLane.Redis;
 using Pigeon.Messaging.Rabbit;
 using Pigeon.Messaging.Topology;
 using Pigeon.Messaging.Consuming.Management;
@@ -34,9 +33,22 @@ ThreadPool.GetMinThreads(out var currentWorkerThreads, out var currentIoThreads)
 ThreadPool.SetMinThreads(
     Math.Max(currentWorkerThreads, runtimeMinThreads),
     Math.Max(currentIoThreads, runtimeMinThreads));
+var useRedisAcceleration = builder.Configuration.GetValue("Demo:UseRedisAcceleration", false);
 var muleRedis = builder.Configuration.GetConnectionString("MuleRedis");
-if (string.IsNullOrWhiteSpace(muleRedis))
+if (useRedisAcceleration && string.IsNullOrWhiteSpace(muleRedis))
     throw new InvalidOperationException("Set ConnectionStrings:MuleRedis.");
+var fastLaneIntentFlushSize = Math.Clamp(
+    builder.Configuration.GetValue("Demo:RedisAcceleration:IntentFlushSize", 1_000),
+    1,
+    10_000);
+var fastLaneCompletionFlushSize = Math.Clamp(
+    builder.Configuration.GetValue("Demo:RedisAcceleration:CompletionFlushSize", 2_000),
+    1,
+    20_000);
+var fastLaneFlushInterval = TimeSpan.FromMilliseconds(Math.Clamp(
+    builder.Configuration.GetValue("Demo:RedisAcceleration:FlushIntervalMilliseconds", 100),
+    1,
+    1_000));
 var runtimeConnection = builder.Configuration.GetConnectionString("Demo")
     ?? throw new InvalidOperationException("Set ConnectionStrings:Demo.");
 var usePostgres = string.Equals(
@@ -45,14 +57,17 @@ var usePostgres = string.Equals(
     StringComparison.OrdinalIgnoreCase);
 var useSqlServerMemoryOptimizedExecutionState = builder.Configuration.GetValue(
     "Demo:SqlServerMemoryOptimizedExecutionState",
-    true);
+    false);
+var applySqlServerDevelopmentTuning = !usePostgres && builder.Configuration.GetValue(
+    "Demo:SqlServerApplyDevelopmentTuning",
+    false);
 var coordinateSqlServerDurableLogFlushes = !usePostgres && builder.Configuration.GetValue(
     "Demo:SqlServerCoordinateDurableLogFlushes",
     false);
-var muleKeyPrefix = RedisOrchestrationDurableActionStateReader.ResolveKeyPrefix(
-    builder.Configuration,
-    usePostgres);
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(muleRedis));
+var muleKeyPrefix = builder.Configuration["Demo:MuleKeyPrefix"] ??
+    $"krackend:demo:runtime:{(usePostgres ? "postgresql" : "sqlserver")}:v3";
+if (useRedisAcceleration)
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(muleRedis!));
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSingleton<RuntimeMetricsProbe>();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>
@@ -109,14 +124,27 @@ builder.Services.AddKrackendOrchestrationsRuntime().AddPigeon(builder.Configurat
     .AddMule(
         mule =>
         {
-            mule.UseRedis(options =>
+            // SQL remains the durable source in both modes. Redis is only a shared
+            // front buffer that batches versioned state into the configured EF store.
+            mule.UseEntityFrameworkCore<RuntimeDbContext>();
+            if (useRedisAcceleration)
             {
-                options.ConnectionFactory = (provider, _) =>
-                    ValueTask.FromResult(provider.GetRequiredService<IConnectionMultiplexer>());
-                options.DisposeConnection = false;
-                options.KeyPrefix = muleKeyPrefix;
-                options.WriteBatchSize = 1_000;
-            });
+                mule.UseFastLaneRedis(options =>
+                {
+                    options.ConnectionFactory = (provider, _) =>
+                        ValueTask.FromResult(provider.GetRequiredService<IConnectionMultiplexer>());
+                    options.DisposeConnection = false;
+                    options.KeyPrefix = muleKeyPrefix;
+                    // Keep projection batches below the point where one FastLane
+                    // transaction monopolizes the same SQL log used by saga state.
+                    options.IntentFlushSize = fastLaneIntentFlushSize;
+                    options.CompletionFlushSize = fastLaneCompletionFlushSize;
+                    options.FlushInterval = fastLaneFlushInterval;
+                    options.LeaseDuration = TimeSpan.FromMinutes(2);
+                    options.FlushClaimTimeout = TimeSpan.FromMinutes(1);
+                    options.DeduplicationRetention = TimeSpan.FromDays(7);
+                });
+            }
         },
         runtime =>
         {
@@ -130,8 +158,6 @@ builder.Services.Configure<OrchestrationTimeoutOptions>(options =>
     options.ScanIntervalSeconds = 1);
 builder.Services.Configure<OrchestrationCoordinationOptions>(options =>
     options.DistributedLeaseEnabled = false);
-builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationDurableActionStateReader,
-    RedisOrchestrationDurableActionStateReader>());
 builder.Services.Configure<MuleSettings>(settings =>
 {
     settings.ImmediateDispatch = true;
@@ -142,11 +168,11 @@ builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    if (!usePostgres)
+    if (!usePostgres && useSqlServerMemoryOptimizedExecutionState)
         await EnsureSqlServerMemoryOptimizedDatabaseAsync(runtimeConnection);
     var runtimeDb = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
     await runtimeDb.Database.EnsureCreatedAsync();
-    if (runtimeDb.Database.IsSqlServer())
+    if (runtimeDb.Database.IsSqlServer() && applySqlServerDevelopmentTuning)
     {
     // This runtime is an OLTP workload: diagnostics and status polling must never
     // take shared locks that stall unrelated saga commits. Row-versioned READ

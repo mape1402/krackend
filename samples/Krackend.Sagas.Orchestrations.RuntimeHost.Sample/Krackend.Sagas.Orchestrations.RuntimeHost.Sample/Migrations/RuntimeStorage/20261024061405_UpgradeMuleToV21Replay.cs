@@ -118,9 +118,11 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
             migrationBuilder.Sql(
                 @"
-                UPDATE [Runtime].[DurableAction]
-                SET [MuleV2Id] = [Runtime].[ToMuleV2Ulid]([Id], [CreatedOnUtc]),
-                    [MuleV2ConcurrencyToken] = [Runtime].[ToMuleV2Ulid](NEWID(), [CreatedOnUtc]);
+                EXEC(N'
+                    UPDATE [Runtime].[DurableAction]
+                    SET [MuleV2Id] = [Runtime].[ToMuleV2Ulid]([Id], [CreatedOnUtc]),
+                        [MuleV2ConcurrencyToken] = [Runtime].[ToMuleV2Ulid](NEWID(), [CreatedOnUtc]);
+                ')
                 ");
 
             migrationBuilder.DropColumn(

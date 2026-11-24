@@ -65,11 +65,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArray());
         }
 
-        public Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(int skip, int take, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
+            DateTime dueOnOrBeforeUtc,
+            int skip,
+            int take,
+            CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<IReadOnlyCollection<TaskExecution>>(_store.Tasks.Values
                 .Where(x => x.Status == TaskExecutionStatus.WaitingResponse && x.ResponseDeadlineUtc != null &&
+                    x.ResponseDeadlineUtc <= dueOnOrBeforeUtc &&
                     string.IsNullOrWhiteSpace(x.TimeoutActionId))
                 .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
                 .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArray());

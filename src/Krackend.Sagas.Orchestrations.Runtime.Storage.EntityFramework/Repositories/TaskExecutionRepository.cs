@@ -166,10 +166,15 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
     }
 
     public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
-        int skip, int take, CancellationToken cancellationToken = default)
+        DateTime dueOnOrBeforeUtc,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
         => await DbContext.TaskExecutions.AsNoTracking()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                x.ResponseDeadlineUtc != null && string.IsNullOrWhiteSpace(x.TimeoutActionId) &&
+                x.ResponseDeadlineUtc != null &&
+                x.ResponseDeadlineUtc <= dueOnOrBeforeUtc &&
+                string.IsNullOrWhiteSpace(x.TimeoutActionId) &&
                 DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
                     (instance.Status == OrchestrationInstanceStatus.Created ||
                      instance.Status == OrchestrationInstanceStatus.Running ||

@@ -644,7 +644,7 @@ Mule capacity profiles are runtime-owned, so hosts do not need to reproduce Krac
 
 For `Custom`, set `TotalWorkerCount` and `TotalMaxDegreeOfParallelism`; only use per-lane overrides when there is a measured reason. Runtime response timers and scheduled dispatches are persisted in Mule and have an exact wake-up notification. This avoids a periodic query over every waiting saga while preserving restart recovery from durable storage.
 
-When multiple independent runtime stores share Redis, give each one a distinct `Runtime:Mule:FastLane:KeyPrefix`. Replicas that share the same runtime database must use the same prefix; separate environments, tenants, or isolated runtime databases must not. The sample defaults to `krackend:runtime` and hosts can override it without reproducing the runtime lane configuration.
+Redis FastLane is optional and disabled by default. EF remains the authoritative durable provider in both modes, so a host can run without Redis by leaving `Runtime:Mule:FastLane:Enabled` set to `false`. When FastLane is enabled, give each independent runtime store a distinct `Runtime:Mule:FastLane:KeyPrefix`. Replicas that share the same runtime database must use the same prefix; separate environments, tenants, or isolated runtime databases must not. The sample defaults to `krackend:runtime` and exposes the projection batch sizes and flush interval as host configuration.
 
 Pigeon adapter configuration:
 

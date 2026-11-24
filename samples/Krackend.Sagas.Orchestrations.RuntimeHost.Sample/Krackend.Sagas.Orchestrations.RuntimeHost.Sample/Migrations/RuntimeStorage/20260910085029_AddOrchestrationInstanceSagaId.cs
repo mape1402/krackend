@@ -20,7 +20,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                 defaultValue: "");
 
             migrationBuilder.Sql(
-                "UPDATE [Runtime].[OrchestrationInstances] SET [SagaId] = [CorrelationId] WHERE [SagaId] = '' OR [SagaId] IS NULL");
+                "EXEC(N'UPDATE [Runtime].[OrchestrationInstances] SET [SagaId] = [CorrelationId] WHERE [SagaId] = '''' OR [SagaId] IS NULL')");
 
             migrationBuilder.CreateIndex(
                 name: "IX_OrchestrationInstances_SagaId",
