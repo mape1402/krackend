@@ -82,7 +82,8 @@
             for (let index = params.startRow; index < Math.min(params.endRow, liveCount); index++)
                 items.push(appended[liveCount - index - 1]);
             let offset = Math.max(0, params.startRow - liveCount);
-            while ((snapshotTotal === null || offset < snapshotTotal) && (items.length < params.endRow - params.startRow || snapshotTotal === null)) {
+            while (items.length < params.endRow - params.startRow &&
+                (snapshotTotal === null || offset < snapshotTotal)) {
                 const page = Math.floor(offset / 25);
                 let rowsInPage = snapshotPages.get(page);
                 if (rowsInPage) { snapshotPages.delete(page); snapshotPages.set(page, rowsInPage); }
@@ -104,7 +105,10 @@
                     }
                 }
                 const pageOffset = offset % 25;
-                const take = Math.min(params.endRow - params.startRow - items.length, snapshotTotal - offset);
+                const requested = params.endRow - params.startRow - items.length;
+                const take = snapshotTotal === null
+                    ? requested
+                    : Math.min(requested, snapshotTotal - offset);
                 if (take <= 0) break;
                 const rows = rowsInPage.slice(pageOffset, pageOffset + take);
                 items.push(...rows);
