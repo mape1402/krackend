@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Data;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
@@ -14,14 +15,17 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 {
     private static readonly ConcurrentDictionary<string, bool> ProvidersWithoutStatusGrouping = new();
     private readonly bool _persistStatisticsObservations;
+    private readonly IRuntimeHotStateStore _hotState;
 
     public OrchestrationInstanceRepository(
         RuntimeDbContext dbContext,
         IRuntimeStorageUnitOfWork unitOfWork,
-        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null)
+        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null,
+        IRuntimeHotStateStore hotState = null)
         : base(dbContext, unitOfWork)
     {
         _persistStatisticsObservations = storageOptions?.Value.PersistStatisticsObservations ?? true;
+        _hotState = hotState;
     }
 
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
@@ -98,14 +102,36 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         // AsNoTracking snapshot here would return the pre-activation revision, detach
         // the pending aggregate on Update, and fail the eventual optimistic write.
         var tracked = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instanceId);
-        if (tracked is not null)
+        var hasTrackedExecutionGraph = tracked is not null &&
+            (DbContext.StageExecutions.Local.Any(stage => stage.OrchestrationInstanceId == instanceId) ||
+             DbContext.TaskExecutions.Local.Any(task => task.OrchestrationInstanceId == instanceId));
+        if (tracked is not null &&
+            (DbContext.Entry(tracked).State != EntityState.Unchanged || hasTrackedExecutionGraph))
         {
             return tracked;
         }
+        // ExecuteUpdate and another DbContext can advance the durable row without
+        // updating this scope's identity map. An isolated unchanged local copy is
+        // therefore only a cache, not pending work. A locally tracked execution
+        // graph still identifies the same in-flight activation and must retain
+        // object identity. Hot-state activations remain safe because their latest
+        // accepted version is read from Redis immediately below.
+        if (tracked is not null)
+            DbContext.Entry(tracked).State = EntityState.Detached;
 
-        return await DbContext.OrchestrationInstances.AsNoTracking()
+        if (_hotState?.IsEnabled == true)
+        {
+            var hot = RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>(
+                await _hotState.TryReadAsync(typeof(OrchestrationInstance).FullName!, instanceId.ToString(), cancellationToken));
+            if (hot is not null) return hot;
+        }
+
+        var durable = await DbContext.OrchestrationInstances.AsNoTracking()
                    .FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
                ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
+        if (_hotState?.IsEnabled == true)
+            await _hotState.CacheAsync(RuntimeHotStateEntityCodec.CreateCacheMutation(durable), cancellationToken);
+        return durable;
     }
 
     public async Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
@@ -118,12 +144,29 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         }
 
         var normalizedKey = startIdempotencyKey.Trim();
-        return await DbContext.OrchestrationInstances.AsNoTracking()
+        if (_hotState?.IsEnabled == true)
+        {
+            var hot = RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>(
+                await _hotState.TryReadByIndexAsync(typeof(OrchestrationInstance).FullName!, "start", normalizedKey, cancellationToken));
+            if (hot is not null) return hot;
+        }
+        var durable = await DbContext.OrchestrationInstances.AsNoTracking()
             .FirstOrDefaultAsync(x => x.StartIdempotencyKey == normalizedKey, cancellationToken);
+        if (durable is not null && _hotState?.IsEnabled == true)
+            await _hotState.CacheAsync(RuntimeHotStateEntityCodec.CreateCacheMutation(durable), cancellationToken);
+        return durable;
     }
 
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
+        if (_hotState?.IsEnabled == true)
+        {
+            var duration = expiresOnUtc - nowUtc;
+            if (duration <= TimeSpan.Zero) return null;
+            return await _hotState.TryAcquireLeaseAsync(instanceId, leaseId, duration, cancellationToken)
+                ? new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc)
+                : null;
+        }
         var transactionLockResult = await TryAcquireSqlServerTransactionLock(
             instanceId, leaseId, cancellationToken);
         if (transactionLockResult.HasValue)
@@ -166,6 +209,11 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
     {
+        if (_hotState?.IsEnabled == true)
+        {
+            await _hotState.ReleaseLeaseAsync(instanceId, leaseId, cancellationToken);
+            return;
+        }
         if (DbContext.IsGuardedByTransactionLock(instanceId, leaseId))
         {
             // SQL Server releases transaction-owned application locks automatically on
@@ -252,14 +300,21 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
-        => await DbContext.OrchestrationInstances.AsNoTracking()
-            .OrderByDescending(x => x.LastUpdatedOnUtc)
-            .Take(take)
-            .ToArrayAsync(cancellationToken);
+    {
+        var size = Math.Max(1, take);
+        if (_hotState?.IsEnabled != true)
+            return await DbContext.OrchestrationInstances.AsNoTracking()
+                .OrderByDescending(x => x.LastUpdatedOnUtc).Take(size).ToArrayAsync(cancellationToken);
+        var overlays = await GetPendingHotInstances(cancellationToken);
+        var durable = await DbContext.OrchestrationInstances.AsNoTracking()
+            .OrderByDescending(x => x.LastUpdatedOnUtc).ThenByDescending(x => x.Id)
+            .Take(size + overlays.Length).ToArrayAsync(cancellationToken);
+        return durable.Concat(overlays).GroupBy(x => x.Id).Select(group => group.Last())
+            .OrderByDescending(x => x.LastUpdatedOnUtc).ThenByDescending(x => x.Id).Take(size).ToArray();
+    }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecentSummaries(int take, CancellationToken cancellationToken = default)
-        => await ReadSummaries(DbContext.OrchestrationInstances.AsNoTracking()
-            .OrderByDescending(x => x.LastUpdatedOnUtc).Take(take), cancellationToken);
+        => await GetRecent(take, cancellationToken);
 
     public async Task<RuntimeInstanceCatalogPage> GetPage(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {
@@ -268,30 +323,26 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         var size = Math.Clamp(query.PageSize, 1, 100);
         var skip = (int)Math.Min((long)(page - 1) * size, int.MaxValue);
         var source = ApplyCatalogFilters(query);
+        if (_hotState?.IsEnabled == true)
+        {
+            var overlays = await GetPendingHotInstances(cancellationToken);
+            var window = (int)Math.Min((long)skip + size + overlays.Length + 1, 100_000);
+            var orderedSource = ApplyCatalogOrder(source, query);
+            var durable = await ReadSummaries(orderedSource.Take(window), cancellationToken);
+            var merged = durable.ToDictionary(item => item.Id);
+            foreach (var overlay in overlays) merged[overlay.Id] = overlay;
+            var logical = ApplyCatalogOrder(merged.Values.Where(item => MatchesCatalog(item, query)), query).ToArray();
+            var hotRows = logical.Skip(skip).Take(size + 1).ToArray();
+            var hotCount = query.IncludeTotalCount
+                ? await GetLogicalCount(source, overlays, query, cancellationToken)
+                : -1;
+            var hotHasMore = query.IncludeTotalCount ? (long)page * size < hotCount : hotRows.Length > size;
+            return new RuntimeInstanceCatalogPage(hotRows.Take(size).ToArray(), hotCount, page, size, hotHasMore);
+        }
         var count = query.IncludeTotalCount
             ? await source.LongCountAsync(cancellationToken)
             : -1;
-        var ordered = (query.Sort, query.Descending) switch
-        {
-            (RuntimeInstanceCatalogSort.Started, false) => source.OrderBy(x => x.StartedOnUtc),
-            (RuntimeInstanceCatalogSort.Started, true) => source.OrderByDescending(x => x.StartedOnUtc),
-            (RuntimeInstanceCatalogSort.Orchestration, false) => source.OrderBy(x => x.OrchestrationDefinitionKey),
-            (RuntimeInstanceCatalogSort.Orchestration, true) => source.OrderByDescending(x => x.OrchestrationDefinitionKey),
-            (RuntimeInstanceCatalogSort.CorrelationId, false) => source.OrderBy(x => x.CorrelationId),
-            (RuntimeInstanceCatalogSort.CorrelationId, true) => source.OrderByDescending(x => x.CorrelationId),
-            (RuntimeInstanceCatalogSort.SagaId, false) => source.OrderBy(x => x.SagaId),
-            (RuntimeInstanceCatalogSort.SagaId, true) => source.OrderByDescending(x => x.SagaId),
-            (RuntimeInstanceCatalogSort.Status, false) => source.OrderBy(x => x.Status),
-            (RuntimeInstanceCatalogSort.Status, true) => source.OrderByDescending(x => x.Status),
-            (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
-            _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
-        };
-        // Keep the deterministic tie-breaker in the same direction as the selected
-        // sort. SQL Server memory-optimized indexes cannot reverse only one key in a
-        // composite index; mixing Started DESC with Id ASC forces a full Top-N sort.
-        var deterministic = query.Descending
-            ? ordered.ThenByDescending(x => x.Id)
-            : ordered.ThenBy(x => x.Id);
+        var deterministic = ApplyCatalogOrder(source, query);
         var rows = await ReadSummaries(
             deterministic.Skip(skip).Take(query.IncludeTotalCount ? size : size + 1),
             cancellationToken);
@@ -338,6 +389,26 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     {
         ArgumentNullException.ThrowIfNull(query);
         var source = ApplyCatalogFilters(query);
+        var durableCounts = await GetDurableStatusCounts(source, cancellationToken);
+        if (_hotState?.IsEnabled != true) return durableCounts;
+        var overlays = await GetPendingHotInstances(cancellationToken);
+        if (overlays.Length == 0) return durableCounts;
+        var durable = await ReadDurableInstances(overlays.Select(item => item.Id), cancellationToken);
+        var byId = durable.ToDictionary(item => item.Id);
+        var counts = durableCounts.ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var overlay in overlays)
+        {
+            if (byId.TryGetValue(overlay.Id, out var previous) && MatchesCatalog(previous, query))
+                AddCount(counts, previous.Status, -1);
+            if (MatchesCatalog(overlay, query)) AddCount(counts, overlay.Status, 1);
+        }
+        return counts.Where(pair => pair.Value > 0).ToDictionary(pair => pair.Key, pair => pair.Value);
+    }
+
+    private async Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetDurableStatusCounts(
+        IQueryable<OrchestrationInstance> source,
+        CancellationToken cancellationToken)
+    {
         var provider = DbContext.Database.ProviderName ?? string.Empty;
         if (!ProvidersWithoutStatusGrouping.ContainsKey(provider))
         {
@@ -363,6 +434,114 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             if (count > 0) counts.Add(status, count);
         }
         return counts;
+    }
+
+    private async Task<OrchestrationInstance[]> GetPendingHotInstances(CancellationToken cancellationToken)
+    {
+        var records = await _hotState!.ReadPendingInstancesAsync(10_000, cancellationToken);
+        return records.Select(RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>)
+            .Where(item => item is not null).Cast<OrchestrationInstance>().ToArray();
+    }
+
+    private async Task<long> GetLogicalCount(
+        IQueryable<OrchestrationInstance> source,
+        OrchestrationInstance[] overlays,
+        RuntimeInstanceCatalogQuery query,
+        CancellationToken cancellationToken)
+    {
+        var count = await source.LongCountAsync(cancellationToken);
+        if (overlays.Length == 0) return count;
+        var durable = await ReadDurableInstances(overlays.Select(item => item.Id), cancellationToken);
+        var byId = durable.ToDictionary(item => item.Id);
+        foreach (var overlay in overlays)
+        {
+            if (byId.TryGetValue(overlay.Id, out var previous) && MatchesCatalog(previous, query)) count--;
+            if (MatchesCatalog(overlay, query)) count++;
+        }
+        return count;
+    }
+
+    private async Task<OrchestrationInstance[]> ReadDurableInstances(
+        IEnumerable<Id> ids,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<OrchestrationInstance>();
+        foreach (var chunk in ids.Distinct().Chunk(500))
+            results.AddRange(await DbContext.OrchestrationInstances.AsNoTracking()
+                .Where(item => chunk.Contains(item.Id)).ToArrayAsync(cancellationToken));
+        return results.ToArray();
+    }
+
+    private static void AddCount(IDictionary<OrchestrationInstanceStatus, long> counts, OrchestrationInstanceStatus status, long delta)
+        => counts[status] = (counts.TryGetValue(status, out var current) ? current : 0L) + delta;
+
+    private static bool MatchesCatalog(OrchestrationInstance item, RuntimeInstanceCatalogQuery query)
+    {
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            var term = query.SearchText.Trim();
+            if (!item.Id.ToString().Equals(term, StringComparison.OrdinalIgnoreCase) &&
+                !(item.OrchestrationDefinitionKey?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                !(item.CorrelationId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                !(item.SagaId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) &&
+                !(item.ExecutionKey?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)) return false;
+        }
+        if (query.Status is { } status && item.Status != status) return false;
+        if (query.Statuses is { Count: > 0 } && !query.Statuses.Contains(item.Status)) return false;
+        if (!string.IsNullOrWhiteSpace(query.OrchestrationKey) &&
+            !string.Equals(item.OrchestrationDefinitionKey, query.OrchestrationKey.Trim(), StringComparison.Ordinal)) return false;
+        if (!string.IsNullOrWhiteSpace(query.OrchestrationVersion) &&
+            !string.Equals(item.OrchestrationVersion, query.OrchestrationVersion.Trim(), StringComparison.Ordinal)) return false;
+        if (query.StartedFromUtc is { } from && item.StartedOnUtc < from) return false;
+        if (query.StartedBeforeUtc is { } before && item.StartedOnUtc >= before) return false;
+        if (query.ActiveOnly && item.Status is not (OrchestrationInstanceStatus.Created or
+            OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Idle or
+            OrchestrationInstanceStatus.Compensating)) return false;
+        return true;
+    }
+
+    private static IOrderedQueryable<OrchestrationInstance> ApplyCatalogOrder(
+        IQueryable<OrchestrationInstance> source,
+        RuntimeInstanceCatalogQuery query)
+    {
+        var ordered = (query.Sort, query.Descending) switch
+        {
+            (RuntimeInstanceCatalogSort.Started, false) => source.OrderBy(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Started, true) => source.OrderByDescending(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Orchestration, false) => source.OrderBy(x => x.OrchestrationDefinitionKey),
+            (RuntimeInstanceCatalogSort.Orchestration, true) => source.OrderByDescending(x => x.OrchestrationDefinitionKey),
+            (RuntimeInstanceCatalogSort.CorrelationId, false) => source.OrderBy(x => x.CorrelationId),
+            (RuntimeInstanceCatalogSort.CorrelationId, true) => source.OrderByDescending(x => x.CorrelationId),
+            (RuntimeInstanceCatalogSort.SagaId, false) => source.OrderBy(x => x.SagaId),
+            (RuntimeInstanceCatalogSort.SagaId, true) => source.OrderByDescending(x => x.SagaId),
+            (RuntimeInstanceCatalogSort.Status, false) => source.OrderBy(x => x.Status),
+            (RuntimeInstanceCatalogSort.Status, true) => source.OrderByDescending(x => x.Status),
+            (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
+            _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
+        };
+        return query.Descending ? ordered.ThenByDescending(x => x.Id) : ordered.ThenBy(x => x.Id);
+    }
+
+    private static IOrderedEnumerable<OrchestrationInstance> ApplyCatalogOrder(
+        IEnumerable<OrchestrationInstance> source,
+        RuntimeInstanceCatalogQuery query)
+    {
+        IOrderedEnumerable<OrchestrationInstance> ordered = (query.Sort, query.Descending) switch
+        {
+            (RuntimeInstanceCatalogSort.Started, false) => source.OrderBy(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Started, true) => source.OrderByDescending(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Orchestration, false) => source.OrderBy(x => x.OrchestrationDefinitionKey, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.Orchestration, true) => source.OrderByDescending(x => x.OrchestrationDefinitionKey, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.CorrelationId, false) => source.OrderBy(x => x.CorrelationId, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.CorrelationId, true) => source.OrderByDescending(x => x.CorrelationId, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.SagaId, false) => source.OrderBy(x => x.SagaId, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.SagaId, true) => source.OrderByDescending(x => x.SagaId, StringComparer.Ordinal),
+            (RuntimeInstanceCatalogSort.Status, false) => source.OrderBy(x => x.Status),
+            (RuntimeInstanceCatalogSort.Status, true) => source.OrderByDescending(x => x.Status),
+            (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
+            _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
+        };
+        return query.Descending ? ordered.ThenByDescending(x => x.Id) : ordered.ThenBy(x => x.Id);
     }
 
     private IQueryable<OrchestrationInstance> ApplyCatalogFilters(RuntimeInstanceCatalogQuery query)

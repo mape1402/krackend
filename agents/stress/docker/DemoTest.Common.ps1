@@ -1,18 +1,38 @@
 $script:DemoUrls = @{ sales='http://127.0.0.1:5411'; inventories='http://127.0.0.1:5412'; payments='http://127.0.0.1:5413'; email='http://127.0.0.1:5414'; runtime='http://127.0.0.1:5410' }
 $script:DemoRepoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+Add-Type -AssemblyName System.Net.Http
+$script:DemoHttpClient = [Net.Http.HttpClient]::new()
 function New-DemoRunId([string]$Label='test') { 'demo-' + $Label + '-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,6) }
 function Assert-Demo($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Invoke-DemoHttp([string]$Service, [string]$Path, [string]$Method='GET', $Body=$null, [int]$TimeoutSeconds=10) {
-    $parameters = @{ Uri=$script:DemoUrls[$Service]+$Path; Method=$Method; TimeoutSec=$TimeoutSeconds; SkipHttpErrorCheck=$true }
-    if ($null -ne $Body) { $parameters.ContentType='application/json'; $parameters.Body=$Body | ConvertTo-Json -Depth 30 }
-    $response = Invoke-WebRequest @parameters
-    $parsed = if ([string]::IsNullOrWhiteSpace($response.Content)) {
-        $null
-    } else {
-        try { $response.Content | ConvertFrom-Json -ErrorAction Stop }
-        catch { $response.Content }
+    $message=[Net.Http.HttpRequestMessage]::new(
+        [Net.Http.HttpMethod]::new($Method),
+        $script:DemoUrls[$Service]+$Path)
+    $timeout=[Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($TimeoutSeconds))
+    try {
+        if ($null -ne $Body) {
+            $message.Content=[Net.Http.StringContent]::new(
+                ($Body | ConvertTo-Json -Depth 30 -Compress),
+                [Text.Encoding]::UTF8,
+                'application/json')
+        }
+        $response=$script:DemoHttpClient.SendAsync($message,$timeout.Token).GetAwaiter().GetResult()
+        try {
+            $content=$response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            $parsed = if ([string]::IsNullOrWhiteSpace($content)) {
+                $null
+            } else {
+                try { $content | ConvertFrom-Json -ErrorAction Stop }
+                catch { $content }
+            }
+            @{ Status=[int]$response.StatusCode; Body=$parsed }
+        } finally {
+            $response.Dispose()
+        }
+    } finally {
+        $timeout.Dispose()
+        $message.Dispose()
     }
-    @{ Status=[int]$response.StatusCode; Body=$parsed }
 }
 function Get-DemoJson([string]$Service, [string]$Path) {
     $response = Invoke-DemoHttp $Service $Path
@@ -122,7 +142,7 @@ function Start-DemoScenariosParallel($Scenarios, [switch]$ViaConsumer, [int]$Tim
             $started=[DateTime]::UtcNow
             $pending.Add([pscustomobject]@{Index=$index;StartedOnUtc=$started;Message=$message;Task=$client.SendAsync($message)})
         }
-        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($pending.Task)).GetAwaiter().GetResult()
+        [void][Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($pending.Task)).GetAwaiter().GetResult()
         $results=[Collections.Generic.List[object]]::new()
         foreach ($entry in $pending) {
             $response=$entry.Task.GetAwaiter().GetResult()

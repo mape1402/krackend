@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.IO;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
@@ -1530,6 +1532,57 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.True((await reader.GetHealthAsync()).BackfillCompleted);
         Assert.Contains(completed.OrchestrationDefinitionKey, await reader.GetOrchestrationKeysAsync());
         Assert.Contains("1.0.0", await reader.SearchOrchestrationVersionsAsync(completed.OrchestrationDefinitionKey, string.Empty));
+    }
+
+    [Fact]
+    public async Task DashboardAndGridOverlayPendingHotInstanceState()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var hotState = Substitute.For<IRuntimeHotStateStore>();
+        hotState.IsEnabled.Returns(true);
+        await using var provider = CreateProvider(
+            configureDbContext: options => options.UseSqlite(connection),
+            configureStorage: options => options.PersistStatisticsObservations = false,
+            hotState: hotState);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var context = services.GetRequiredService<RuntimeDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        var now = DateTime.UtcNow;
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-5));
+        instance.OrchestrationVersion = "1.0.0";
+        context.OrchestrationInstances.Add(instance);
+        await context.SaveChangesAsync();
+        context.Entry(instance).State = EntityState.Detached;
+
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        instance.CompletedOnUtc = now;
+        instance.LastUpdatedOnUtc = now;
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        jsonOptions.Converters.Add(new RuntimeIdJsonConverter());
+        var record = new RuntimeHotStateRecord(
+            typeof(OrchestrationInstance).FullName!, instance.Id.ToString(), instance.Id.ToString(),
+            RuntimeHotStateOperation.Upsert, JsonSerializer.Serialize(instance, jsonOptions), 42);
+        hotState.ReadPendingInstancesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([record]);
+
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1));
+        var reader = services.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var cohort = await reader.GetCohortAsync(query);
+        var activity = await reader.GetActivityAsync(query with { RestrictActivityToStartedCohort = true },
+            SagaStatisticsActivityBucket.Minute);
+        var countsRepository = Assert.IsAssignableFrom<IRuntimeInstanceStatusCountsRepository>(
+            services.GetRequiredService<IOrchestrationInstanceRepository>());
+        var counts = await countsRepository.GetStatusCounts(new RuntimeInstanceCatalogQuery());
+
+        Assert.Equal(1, cohort.Total);
+        Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Completed]);
+        Assert.DoesNotContain(OrchestrationInstanceStatus.Running, cohort.CurrentStatuses.Keys);
+        Assert.Contains(activity, item => item.Status == OrchestrationInstanceStatus.Completed && item.Count == 1);
+        Assert.Equal(1, counts[OrchestrationInstanceStatus.Completed]);
+        Assert.DoesNotContain(OrchestrationInstanceStatus.Running, counts.Keys);
+        Assert.Equal(1, (await reader.GetHealthAsync()).PendingObservations);
     }
 
     [Fact]
@@ -3175,7 +3228,8 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     private static ServiceProvider CreateProvider(
         IRuntimeReactiveEventPublisher? publisher = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null,
-        Action<RuntimeEntityFrameworkStorageOptions>? configureStorage = null)
+        Action<RuntimeEntityFrameworkStorageOptions>? configureStorage = null,
+        IRuntimeHotStateStore? hotState = null)
     {
         var services = new ServiceCollection();
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -3186,6 +3240,10 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         if (publisher is not null)
         {
             services.Replace(ServiceDescriptor.Singleton(publisher));
+        }
+        if (hotState is not null)
+        {
+            services.Replace(ServiceDescriptor.Singleton(hotState));
         }
 
         return services.BuildServiceProvider();
@@ -3332,6 +3390,15 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             Events.Add(eventData);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RuntimeIdJsonConverter : JsonConverter<Id>
+    {
+        public override Id Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => new(System.Ulid.Parse(reader.GetString()!));
+
+        public override void Write(Utf8JsonWriter writer, Id value, JsonSerializerOptions options)
+            => writer.WriteStringValue(value.ToString());
     }
 
 }

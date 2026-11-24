@@ -3,6 +3,7 @@
     <ProjectReference Include="../Demo.ServiceKit/Demo.ServiceKit.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer/Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule/Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
+    <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.HotState.Redis/Krackend.Sagas.Orchestrations.Runtime.HotState.Redis.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework/Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
     <ProjectReference Include="../../../src/Krackend.Sagas.Orchestrations.Runtime.ButterMorph/Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
