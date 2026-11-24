@@ -677,6 +677,49 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
+    public async Task ReconcilerRecoversOnlyStorageSelectedProgressOrphansConcurrently()
+    {
+        var now = DateTime.UtcNow;
+        var orphanIds = new[] { Id.New(), Id.New(), Id.New() };
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationProgressRecoveryCandidateRepository>();
+        var progressCandidates = (IOrchestrationProgressRecoveryCandidateRepository)repository;
+        var timeoutProcessor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        var reconciliation = Substitute.For<IOrchestrationReconciliationService>();
+        admission.CanAccept(RuntimeAdmissionOperation.Reconciliation).Returns(true);
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        progressCandidates.GetProgressRecoveryCandidates(
+                now.AddSeconds(-30), now, 10, Arg.Any<CancellationToken>())
+            .Returns(orphanIds);
+        reconciliation.ReconcileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new OrchestrationReconciliationResult("Recovered",
+                [new OrchestrationReconciliationFinding("Recovered", $"Recovered {call.ArgAt<string>(0)}") ]));
+        var services = new ServiceCollection();
+        services.AddScoped<IOrchestrationReconciliationService>(_ => reconciliation);
+        await using var provider = services.BuildServiceProvider();
+        var reconciler = new DefaultOrchestrationRuntimeReconciler(
+            admission,
+            repository,
+            timeoutProcessor,
+            sagaEngine,
+            Options.Create(new RuntimeReconciliationOptions
+            {
+                BatchSize = 10,
+                ProgressRecoveryGraceSeconds = 30
+            }),
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await reconciler.ReconcileAsync(now);
+
+        Assert.Equal(3, result.InstancesObserved);
+        Assert.Equal(3, result.InstancesAdvanced);
+        await reconciliation.Received(3).ReconcileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await repository.DidNotReceiveWithAnyArgs().GetRecoverable(default, default);
+    }
+
+    [Fact]
     public async Task InMemoryPrimaryPersistenceProbeIsAlwaysAvailable()
     {
         var probe = new InMemoryRuntimePrimaryPersistenceProbe();

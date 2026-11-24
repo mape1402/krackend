@@ -12,6 +12,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Mule;
 using Mule.Dispatching;
@@ -124,6 +125,37 @@ public sealed class MuleBufferingTests
         Assert.Equal(TriggerLane, options.Lane);
         Assert.Equal("correlation-1", options.CorrelationId);
         Assert.Equal("trigger:artifact-1:correlation-1", options.DeduplicationKey);
+    }
+
+    [Fact]
+    public async Task IntakeBufferMule_AfterAdmission_DoesNotCancelAcceptedTriggerWithCallerToken()
+    {
+        using var callerCancellation = new CancellationTokenSource();
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.TriggerIntake, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callerCancellation.Cancel();
+                return ValueTask.CompletedTask;
+            });
+        var engine = Substitute.For<ISagaEngine>();
+        CancellationToken processingToken = default;
+        engine.StartOrchestrationAsync(Arg.Any<StartIntent>(), Arg.Do<CancellationToken>(token => processingToken = token))
+            .Returns(Task.CompletedTask);
+        var mule = Substitute.For<IMuleClient>();
+        using var provider = BuildServiceProvider(mule, sagaEngine: engine, admissionController: admission);
+
+        await provider.GetRequiredService<IIntakeBuffer>().EnqueueWorkAsync(new WorkItem
+        {
+            ArtifactId = "artifact-1",
+            IngressKind = IngressKind.Trigger,
+            MessageMetadata = new OrchestrationMessageMetadata { CorrelationId = "accepted-trigger" }
+        }, callerCancellation.Token);
+
+        Assert.True(callerCancellation.IsCancellationRequested);
+        Assert.False(processingToken.IsCancellationRequested);
+        await engine.Received(1).StartOrchestrationAsync(Arg.Any<StartIntent>(), Arg.Any<CancellationToken>());
+        await mule.DidNotReceiveWithAnyArgs().EnqueueAsync<WorkItem>(default!, default!, default!, default);
     }
 
     [Theory]
@@ -708,7 +740,8 @@ public sealed class MuleBufferingTests
         ITaskDispatchRepository? dispatchRepository = null,
         IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecovery = null,
         IOrchestrationInstanceCoordinator? coordinator = null,
-        ISagaEngine? sagaEngine = null)
+        ISagaEngine? sagaEngine = null,
+        IRuntimeAdmissionController? admissionController = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -731,6 +764,7 @@ public sealed class MuleBufferingTests
         }
         if (coordinator is not null) services.AddSingleton(coordinator);
         if (sagaEngine is not null) services.AddSingleton(sagaEngine);
+        if (admissionController is not null) services.AddSingleton(admissionController);
         return services.BuildServiceProvider();
     }
 

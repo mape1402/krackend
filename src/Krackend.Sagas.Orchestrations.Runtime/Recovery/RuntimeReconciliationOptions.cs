@@ -19,4 +19,9 @@ public sealed class RuntimeReconciliationOptions
     /// Gets or sets the maximum number of recoverable instances processed per scan.
     /// </summary>
     public int BatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Gets or sets the minimum instance age before a running instance without active work can be recovered.
+    /// </summary>
+    public int ProgressRecoveryGraceSeconds { get; set; } = 30;
 }

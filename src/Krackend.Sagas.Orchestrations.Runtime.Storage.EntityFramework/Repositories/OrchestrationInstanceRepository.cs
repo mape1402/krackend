@@ -10,7 +10,7 @@ using System.Data;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IAtomicStartIdempotencyRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IAtomicStartIdempotencyRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader, IOrchestrationProgressRecoveryCandidateRepository
 {
     private static readonly ConcurrentDictionary<string, bool> ProvidersWithoutStatusGrouping = new();
     private readonly bool _persistStatisticsObservations;
@@ -437,6 +437,28 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 x.Status != OrchestrationInstanceStatus.Aborted)
             .OrderBy(x => x.LastUpdatedOnUtc)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<Id>> GetProgressRecoveryCandidates(
+        DateTime startedOnOrBeforeUtc,
+        DateTime leaseExpiredOnOrBeforeUtc,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(instance =>
+                instance.Status == OrchestrationInstanceStatus.Running &&
+                instance.StartedOnUtc <= startedOnOrBeforeUtc &&
+                (instance.ActiveLeaseExpiresOnUtc == null || instance.ActiveLeaseExpiresOnUtc <= leaseExpiredOnOrBeforeUtc) &&
+                !DbContext.TaskExecutions.Any(task =>
+                    task.OrchestrationInstanceId == instance.Id &&
+                    (task.Status == TaskExecutionStatus.Pending ||
+                     task.Status == TaskExecutionStatus.Running ||
+                     task.Status == TaskExecutionStatus.WaitingResponse ||
+                     task.Status == TaskExecutionStatus.Retrying)))
+            .OrderBy(instance => instance.StartedOnUtc)
+            .ThenBy(instance => instance.Id)
+            .Select(instance => instance.Id)
+            .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
 
     public async Task<IReadOnlyCollection<Id>> GetLifetimeCandidates(
