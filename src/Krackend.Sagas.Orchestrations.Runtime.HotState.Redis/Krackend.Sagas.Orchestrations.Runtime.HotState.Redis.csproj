@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Krackend.Sagas.Orchestrations.Runtime.HotState.Redis</PackageId>
+    <Description>Optional Redis write-ahead hot-state and read-model provider for the Krackend orchestration runtime.</Description>
+    <PackageTags>saga;orchestration;runtime;redis;write-behind;cache</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.24" />
+  </ItemGroup>
+</Project>

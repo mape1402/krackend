@@ -196,6 +196,8 @@ services:
       ConnectionStrings__Default: "Server=runtime-sql,1433;Database=KrackendRuntimeSqlServerV11Dba;User Id=krackend_runtime;Password=${DEMO_SQL_PASSWORD:?Set DEMO_SQL_PASSWORD};Encrypt=True;TrustServerCertificate=True;Pooling=True;Min Pool Size=64;Max Pool Size=1024;Connect Timeout=30;ConnectRetryCount=3;ConnectRetryInterval=1;Application Name=Krackend.Demo.Runtime"
       Demo__RuntimeProvider: "SqlServer"
       Demo__UseRedisAcceleration: "true"
+      Demo__UseRuntimeHotState: "true"
+      Demo__RuntimeHotStateKeyPrefix: "krackend:demo:runtime:sqlserver:v11-dba:hot:v1"
       Demo__RedisAcceleration__IntentFlushSize: "1000"
       Demo__RedisAcceleration__CompletionFlushSize: "2000"
       Demo__RedisAcceleration__FlushIntervalMilliseconds: "100"

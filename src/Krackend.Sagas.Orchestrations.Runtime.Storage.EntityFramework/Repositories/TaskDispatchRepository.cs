@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
@@ -11,17 +12,23 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
 {
     private readonly bool _persistSuccessfulTransportOutcomes;
     private readonly bool _embedCurrentTransportState;
+    private readonly IRuntimeHotStateStore _hotState;
+    private readonly RuntimeMutationLeaseScope _mutationLease;
 
     public bool EmbedsCurrentTransportState => _embedCurrentTransportState;
 
     public TaskDispatchRepository(
         RuntimeDbContext dbContext,
         IRuntimeStorageUnitOfWork unitOfWork,
-        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null)
+        IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions = null,
+        IRuntimeHotStateStore hotState = null,
+        RuntimeMutationLeaseScope mutationLease = null)
         : base(dbContext, unitOfWork)
     {
         _persistSuccessfulTransportOutcomes = storageOptions?.Value.PersistSuccessfulTransportOutcomes ?? true;
         _embedCurrentTransportState = storageOptions?.Value.EmbedCurrentTransportState ?? false;
+        _hotState = hotState;
+        _mutationLease = mutationLease;
     }
 
     public async Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default)
@@ -91,6 +98,26 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     public async Task<TaskDispatch> TryAcceptCallback(Id dispatchId, string receiptId, string payload, DateTime acceptedOnUtc,
         CancellationToken cancellationToken = default, TaskCallbackIdentity identity = null)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
+            if (hotTask is not null &&
+                EmbeddedTaskTransportState.TryReadAttempt(hotTask, out var hotAttempt) &&
+                EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch))
+            {
+                if (!await MatchesIdentity(hotTask, hotAttempt, identity, cancellationToken)) return null;
+                if (hotDispatch.CallbackReceiptId is null && !IsFinished(hotDispatch.DispatchStatus))
+                {
+                    hotDispatch.CallbackReceiptId = receiptId;
+                    hotDispatch.CallbackAcceptedOnUtc = acceptedOnUtc;
+                    hotDispatch.PendingCallbackPayload = payload;
+                    hotDispatch.CallbackPending = true;
+                    EmbeddedTaskTransportState.StoreDispatch(hotTask, hotDispatch);
+                    await PersistHotTask(hotTask, cancellationToken);
+                }
+                return hotDispatch;
+            }
+        }
         var matches = DbContext.TaskDispatches.Where(x => x.Id == dispatchId);
         if (identity is not null)
         {
@@ -116,6 +143,20 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
 
     public async Task CompleteCallback(Id dispatchId, string receiptId, CancellationToken cancellationToken = default)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
+            if (hotTask is not null && EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch) &&
+                string.Equals(hotDispatch.CallbackReceiptId, receiptId, StringComparison.Ordinal) &&
+                hotDispatch.CallbackPending)
+            {
+                hotDispatch.CallbackPending = false;
+                hotDispatch.PendingCallbackPayload = null;
+                EmbeddedTaskTransportState.StoreDispatch(hotTask, hotDispatch);
+                await PersistHotTask(hotTask, cancellationToken);
+                return;
+            }
+        }
         var tracked = DbContext.TaskDispatches.Local.FirstOrDefault(x =>
             x.Id == dispatchId &&
             string.Equals(x.CallbackReceiptId, receiptId, StringComparison.Ordinal) &&
@@ -164,6 +205,20 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     {
         if (_embedCurrentTransportState)
         {
+            if (_hotState?.IsEnabled == true)
+            {
+                var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
+                if (hotTask is not null && EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch))
+                {
+                    if (hotDispatch.SentOnUtc is null)
+                    {
+                        hotDispatch.SentOnUtc = publishedOnUtc;
+                        EmbeddedTaskTransportState.StoreDispatch(hotTask, hotDispatch);
+                        await PersistHotTask(hotTask, cancellationToken);
+                    }
+                    return;
+                }
+            }
             var task = await DbContext.TaskExecutions.AsNoTracking()
                 .FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken);
             if (task is not null && EmbeddedTaskTransportState.TryReadDispatch(task, out var embedded))
@@ -199,6 +254,21 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     {
         if (_embedCurrentTransportState)
         {
+            if (_hotState?.IsEnabled == true)
+            {
+                var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
+                if (hotTask is not null && EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch))
+                {
+                    if (IsFinished(hotDispatch.DispatchStatus)) return false;
+                    hotDispatch.SentOnUtc = publishedOnUtc;
+                    hotDispatch.DispatchStatus = publishedStatus;
+                    hotDispatch.FailedOnUtc = null;
+                    hotDispatch.FailureReason = null;
+                    EmbeddedTaskTransportState.StoreDispatch(hotTask, hotDispatch);
+                    await PersistHotTask(hotTask, cancellationToken);
+                    return true;
+                }
+            }
             var task = await DbContext.TaskExecutions.FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken);
             if (task is not null && EmbeddedTaskTransportState.TryReadDispatch(task, out var embedded))
             {
@@ -234,6 +304,39 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         DateTime? responseDeadlineUtc,
         CancellationToken cancellationToken = default)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var hotTask = await TryReadHotTask(taskExecutionId, cancellationToken);
+            if (hotTask is not null &&
+                EmbeddedTaskTransportState.TryReadAttempt(hotTask, out var hotAttempt) &&
+                EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch) &&
+                hotAttempt.Id == taskExecutionAttemptId && hotDispatch.Id == dispatchId)
+            {
+                if (IsFinished(hotDispatch.DispatchStatus)) return false;
+                if (hotDispatch.DispatchStatus is not ("QueuePending" or "Enqueued" or "Scheduled" or "RetryPending" or "ReplayPending"))
+                    throw new RuntimeStateConflictException(
+                        $"Task dispatch '{dispatchId}' changed before awaited publication confirmation.");
+                if (hotAttempt.Status != TaskExecutionStatus.Running || hotTask.Status != TaskExecutionStatus.Running)
+                    throw new RuntimeStateConflictException(
+                        $"Task graph for dispatch '{dispatchId}' changed before awaited publication confirmation.");
+
+                hotDispatch.SentOnUtc = sentOnUtc;
+                hotDispatch.DispatchStatus = "WaitingResponse";
+                hotDispatch.FailedOnUtc = null;
+                hotDispatch.FailureReason = null;
+                hotAttempt.Status = TaskExecutionStatus.WaitingResponse;
+                hotAttempt.WaitingSinceUtc = sentOnUtc;
+                hotTask.Status = TaskExecutionStatus.WaitingResponse;
+                hotTask.WaitingSinceUtc = sentOnUtc;
+                hotTask.ResponseDeadlineUtc = responseDeadlineUtc;
+                hotTask.TimeoutActionId = null;
+                hotTask.TimeoutActionLane = null;
+                EmbeddedTaskTransportState.StoreAttempt(hotTask, hotAttempt);
+                EmbeddedTaskTransportState.StoreDispatch(hotTask, hotDispatch);
+                await PersistHotTask(hotTask, cancellationToken);
+                return true;
+            }
+        }
         var dispatchUpdated = await DbContext.TaskDispatches
             .Where(x => x.Id == dispatchId &&
                 x.TaskExecutionAttemptId == taskExecutionAttemptId &&
@@ -325,6 +428,12 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
 
     public async Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
+            if (hotTask is not null && EmbeddedTaskTransportState.TryReadDispatch(hotTask, out var hotDispatch))
+                return hotDispatch;
+        }
         // Added/modified dispatches are part of the current activation and must stay
         // visible before its final commit. An unchanged tracked entity, however, can
         // be stale after an atomic receipt/update from another scope. Read those as a
@@ -348,6 +457,11 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         Id dispatchId,
         CancellationToken cancellationToken = default)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var hotState = await TryReadHotExecutionState(dispatchId, cancellationToken);
+            if (hotState is not null) return hotState;
+        }
         var state = await (from dispatch in DbContext.TaskDispatches
                   join attempt in DbContext.TaskExecutionAttempts
                       on dispatch.TaskExecutionAttemptId equals attempt.Id
@@ -382,6 +496,57 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         Id dispatchId,
         CancellationToken cancellationToken = default)
     {
+        if (_embedCurrentTransportState && _hotState?.IsEnabled == true)
+        {
+            var execution = await TryReadHotExecutionState(dispatchId, cancellationToken);
+            if (execution is not null)
+            {
+                var stageRecordsTask = _hotState.ReadByInstanceAsync(
+                    typeof(StageExecution).FullName!, execution.Instance.Id, cancellationToken);
+                var taskRecordsTask = _hotState.ReadByInstanceAsync(
+                    typeof(TaskExecution).FullName!, execution.Instance.Id, cancellationToken);
+                await Task.WhenAll(stageRecordsTask, taskRecordsTask);
+                var stageRecords = await stageRecordsTask;
+                var taskRecords = await taskRecordsTask;
+                var hotStages = stageRecords.Select(RuntimeHotStateEntityCodec.Deserialize<StageExecution>)
+                    .Where(item => item is not null).Cast<StageExecution>()
+                    .OrderBy(item => item.Order).ToArray();
+                var hotTasks = taskRecords.Select(RuntimeHotStateEntityCodec.Deserialize<TaskExecution>)
+                    .Where(item => item is not null && item.StageExecutionId == execution.Task.StageExecutionId)
+                    .Cast<TaskExecution>().ToArray();
+
+                StageExecution[] logicalStages;
+                TaskExecution[] logicalTasks;
+                if (HasCompleteHotStagePrefix(hotStages))
+                {
+                    // A hot-created instance retains every materialized stage and task
+                    // even after its journal batches project. Redis therefore owns the
+                    // complete decision graph; querying SQL again here would put two
+                    // database round trips back into every callback.
+                    logicalStages = hotStages;
+                    logicalTasks = hotTasks;
+                }
+                else
+                {
+                    // An instance first touched after hot state was enabled can have a
+                    // partial Redis graph. Merge durable history only for that migration
+                    // case, then subsequent mutations remain entirely on the hot path.
+                    var durableStages = await DbContext.StageExecutions.AsNoTracking()
+                        .Where(item => item.OrchestrationInstanceId == execution.Instance.Id)
+                        .ToArrayAsync(cancellationToken);
+                    var durableTasks = await DbContext.TaskExecutions.AsNoTracking()
+                        .Where(item => item.OrchestrationInstanceId == execution.Instance.Id &&
+                            item.StageExecutionId == execution.Task.StageExecutionId)
+                        .ToArrayAsync(cancellationToken);
+                    logicalStages = durableStages.Concat(hotStages).GroupBy(item => item.Id)
+                        .Select(group => group.Last()).OrderBy(item => item.Order).ToArray();
+                    logicalTasks = durableTasks.Concat(hotTasks).GroupBy(item => item.Id)
+                        .Select(group => group.Last()).ToArray();
+                }
+                return new TaskDispatchCallbackExecutionState(
+                    execution, new OrchestrationExecutionGraph(logicalStages, logicalTasks));
+            }
+        }
         if (_embedCurrentTransportState)
         {
             if (string.Equals(
@@ -723,6 +888,89 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
             .Skip(Math.Max(0, skip))
             .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
+
+    private async Task<TaskExecution> TryReadHotTask(Id taskId, CancellationToken cancellationToken)
+    {
+        var tracked = DbContext.TaskExecutions.Local.FirstOrDefault(item => item.Id == taskId);
+        if (tracked is not null && EmbeddedTaskTransportState.IsEmbedded(tracked)) return tracked;
+        return RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
+            await _hotState.TryReadAsync(typeof(TaskExecution).FullName!, taskId.ToString(), cancellationToken));
+    }
+
+    private async Task<TaskDispatchExecutionState> TryReadHotExecutionState(
+        Id dispatchId,
+        CancellationToken cancellationToken)
+    {
+        var task = await TryReadHotTask(dispatchId, cancellationToken)
+            ?? await DbContext.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(
+                item => item.Id == dispatchId, cancellationToken);
+        if (task is null ||
+            !EmbeddedTaskTransportState.TryReadAttempt(task, out var attempt) ||
+            !EmbeddedTaskTransportState.TryReadDispatch(task, out var dispatch))
+            return null;
+
+        var instanceRecordTask = _hotState.TryReadAsync(typeof(OrchestrationInstance).FullName!,
+            task.OrchestrationInstanceId.ToString(), cancellationToken);
+        var stageRecordTask = _hotState.TryReadAsync(typeof(StageExecution).FullName!,
+            task.StageExecutionId.ToString(), cancellationToken);
+        await Task.WhenAll(instanceRecordTask, stageRecordTask);
+        var instance = RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>(await instanceRecordTask);
+        var stage = RuntimeHotStateEntityCodec.Deserialize<StageExecution>(await stageRecordTask);
+        instance ??= await DbContext.OrchestrationInstances.AsNoTracking().FirstOrDefaultAsync(
+            item => item.Id == task.OrchestrationInstanceId, cancellationToken);
+        stage ??= await DbContext.StageExecutions.AsNoTracking().FirstOrDefaultAsync(
+            item => item.Id == task.StageExecutionId, cancellationToken);
+        if (instance is null || stage is null) return null;
+        return new TaskDispatchExecutionState(instance, task, attempt, dispatch, stage);
+    }
+
+    private static bool HasCompleteHotStagePrefix(IReadOnlyList<StageExecution> stages)
+    {
+        if (stages.Count == 0 || stages[0].Order != 1) return false;
+        for (var index = 1; index < stages.Count; index++)
+        {
+            if (stages[index].Order != stages[index - 1].Order + 1)
+                return false;
+        }
+        return true;
+    }
+
+    private async Task<bool> MatchesIdentity(
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        TaskCallbackIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        if (identity is null) return true;
+        if (identity.AttemptNumber > 0 && attempt.AttemptNumber != identity.AttemptNumber) return false;
+        if (identity.TaskExecutionId.HasValue && task.Id != identity.TaskExecutionId.Value) return false;
+        if (identity.InstanceId.HasValue && task.OrchestrationInstanceId != identity.InstanceId.Value) return false;
+        if (!identity.ArtifactId.HasValue) return true;
+
+        var instance = RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>(
+            await _hotState.TryReadAsync(typeof(OrchestrationInstance).FullName!,
+                task.OrchestrationInstanceId.ToString(), cancellationToken))
+            ?? await DbContext.OrchestrationInstances.AsNoTracking().FirstOrDefaultAsync(
+                item => item.Id == task.OrchestrationInstanceId, cancellationToken);
+        return instance?.RuntimeOrchestrationArtifactId == identity.ArtifactId.Value;
+    }
+
+    private async Task PersistHotTask(TaskExecution task, CancellationToken cancellationToken)
+    {
+        if (_mutationLease?.Current is not null)
+        {
+            if (DbContext.Entry(task).State == EntityState.Detached)
+            {
+                DetachLocalTrackedEntity(DbContext.TaskExecutions, task);
+                DbContext.TaskExecutions.Update(task);
+            }
+            await SaveChanges(cancellationToken);
+            return;
+        }
+
+        await _hotState.CommitAsync(
+            [RuntimeHotStateEntityCodec.CreateCacheMutation(task)], cancellationToken);
+    }
 
     private static bool IsFinished(string status)
         => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||

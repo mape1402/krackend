@@ -31,6 +31,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Replication;
 using Krackend.Sagas.Orchestrations.Runtime.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
+using Krackend.Sagas.Orchestrations.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
@@ -84,6 +85,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRuntimeStateTransaction, RuntimeStateTransaction>();
             services.TryAddSingleton<OrchestrationTimeoutRepairCursor>();
             services.TryAddSingleton<RuntimeForegroundActivity>();
+            services.TryAddSingleton<IRuntimeHotStateStore, NoopRuntimeHotStateStore>();
             services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
             services.TryAddScoped<IOrchestrationConditionEvaluator, DefaultOrchestrationConditionEvaluator>();
             services.TryAddScoped<IOrchestrationBranchNavigator, DefaultOrchestrationBranchNavigator>();

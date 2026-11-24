@@ -21,6 +21,7 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
     private readonly ILogger<DefaultOrchestrationInstanceCoordinator> _logger;
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
     private readonly RuntimeMutationLeaseScope _mutationLease;
+    private readonly IRuntimeHotStateStore _hotState;
     private readonly OrchestrationInstanceLocalGate _localGate;
     private readonly string _replicaBootId;
     private readonly Dictionary<Id, PostLeaseWork> _postLeaseWork = new();
@@ -68,7 +69,8 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         IRuntimeStorageUnitOfWork storageUnitOfWork,
         RuntimeMutationLeaseScope mutationLease = null,
         IRuntimeReplicaIdentity replicaIdentity = null,
-        OrchestrationInstanceLocalGate localGate = null)
+        OrchestrationInstanceLocalGate localGate = null,
+        IRuntimeHotStateStore hotState = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
@@ -76,6 +78,7 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _storageUnitOfWork = storageUnitOfWork ?? throw new ArgumentNullException(nameof(storageUnitOfWork));
         _mutationLease = mutationLease ?? new RuntimeMutationLeaseScope();
+        _hotState = hotState;
         _localGate = localGate ?? new OrchestrationInstanceLocalGate();
         _replicaBootId = replicaIdentity?.ReplicaBootId ?? $"process-{Environment.ProcessId}";
     }
@@ -104,6 +107,10 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         if (!_options.DistributedLeaseEnabled)
             return await TryExecuteWithLocalGateAsync(
                 instanceId, operation, localLease, cancellationToken);
+
+        if (_hotState?.IsEnabled == true && _storageUnitOfWork.PreferBatchedEngineActivations)
+            return await TryExecuteWithHotStateAsync(
+                instanceId, operation, localLease, cancellationToken, waitForLease);
 
         if (!_storageUnitOfWork.PreferBatchedEngineActivations)
             return await TryExecuteWithDurableLeaseAsync(
@@ -202,6 +209,95 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         return true;
     }
 
+    private async Task<bool> TryExecuteWithHotStateAsync(
+        Id instanceId,
+        Func<CancellationToken, Task> operation,
+        IDisposable localLease,
+        CancellationToken cancellationToken,
+        bool waitForLease)
+    {
+        var leaseId = $"runtime:{_replicaBootId}:{Id.NewDistributed()}";
+        var leaseDuration = ResolveLeaseDuration(_options);
+        var acquisitionStarted = Stopwatch.GetTimestamp();
+        (bool InstanceMissing, OrchestrationInstanceLease Lease) acquisition;
+        try
+        {
+            acquisition = await TryAcquireLeaseAsync(
+                instanceId, leaseId, leaseDuration, waitForLease, cancellationToken);
+        }
+        catch
+        {
+            localLease.Dispose();
+            throw;
+        }
+        RuntimeConcurrencyMetrics.LeaseAcquisitionMilliseconds.Record(
+            Stopwatch.GetElapsedTime(acquisitionStarted).TotalMilliseconds);
+        if (acquisition.Lease is null)
+        {
+            localLease.Dispose();
+            RuntimeConcurrencyMetrics.LeaseContention.Add(1);
+            return false;
+        }
+
+        PostLeaseWork postLeaseWork = null;
+        IRuntimePipelinedStorageTransaction pipelinedTransaction = null;
+        var leaseHeld = true;
+        try
+        {
+            using var mutationScope = _mutationLease.Enter(acquisition.Lease);
+            await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+            using (_storageUnitOfWork.DeferAutoSave())
+            {
+                Push(instanceId);
+                postLeaseWork = new PostLeaseWork();
+                _postLeaseWork.Add(instanceId, postLeaseWork);
+                var mutationStarted = Stopwatch.GetTimestamp();
+                using var logScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["OrchestrationInstanceId"] = instanceId.ToString(),
+                    ["MutationLeaseId"] = leaseId,
+                    ["ReplicaBootId"] = _replicaBootId,
+                    ["LeaseExpiresOnUtc"] = acquisition.Lease.ExpiresOnUtc
+                });
+                try
+                {
+                    await operation(cancellationToken);
+                    await _storageUnitOfWork.SaveChanges(cancellationToken);
+                    pipelinedTransaction = await CommitForDispatchPipeliningAsync(
+                        transaction, cancellationToken);
+                }
+                finally
+                {
+                    RuntimeConcurrencyMetrics.MutationMilliseconds.Record(
+                        Stopwatch.GetElapsedTime(mutationStarted).TotalMilliseconds);
+                    Pop(instanceId);
+                    _postLeaseWork.Remove(instanceId);
+                }
+            }
+
+            await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None);
+            leaseHeld = false;
+        }
+        finally
+        {
+            if (leaseHeld)
+            {
+                try { await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None); }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(exception,
+                        "Could not release hot-state lease '{leaseId}' for instance '{instanceId}'.",
+                        leaseId, instanceId);
+                }
+            }
+            localLease.Dispose();
+        }
+
+        await ExecutePostLeaseWorkAndDurabilityAsync(
+            postLeaseWork, pipelinedTransaction, cancellationToken);
+        return true;
+    }
+
     public async Task<bool> TryExecuteNewAsync(
         Id proposedInstanceId,
         Func<CancellationToken, Task> operation,
@@ -223,6 +319,10 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             RuntimeConcurrencyMetrics.LeaseContention.Add(1);
             return false;
         }
+
+        if (_hotState?.IsEnabled == true && _storageUnitOfWork.PreferBatchedEngineActivations)
+            return await TryExecuteWithHotStateAsync(
+                proposedInstanceId, operation, localLease, cancellationToken, waitForLocalGate);
 
         // There cannot be a durable lease for a row that does not exist yet. The unique
         // instance id and start-idempotency indexes arbitrate the extremely rare creation

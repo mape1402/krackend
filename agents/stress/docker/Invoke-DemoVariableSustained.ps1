@@ -82,7 +82,7 @@ function Send-SeedPhase([Net.Http.HttpClient]$client, [object[]]$entries) {
                 'application/json')
             $pending.Add([pscustomobject]@{ Message = $message; Task = $client.SendAsync($message) })
         }
-        [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($pending.Task)).GetAwaiter().GetResult()
+        [void][Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($pending.Task)).GetAwaiter().GetResult()
         foreach ($item in $pending) {
             $response = $item.Task.GetAwaiter().GetResult()
             try {

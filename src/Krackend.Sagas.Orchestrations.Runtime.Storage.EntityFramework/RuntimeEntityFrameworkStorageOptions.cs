@@ -49,6 +49,22 @@ public sealed class RuntimeEntityFrameworkStorageOptions
     public bool PersistStatisticsObservations { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets how long the durable hot-state projector coalesces journal entries.
+    /// Live reads continue to use the Redis overlay during this bounded interval.
+    /// </summary>
+    public TimeSpan HotStateProjectionInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Gets or sets the longest time an uninterrupted foreground burst may defer a
+    /// durable projection. Once reached, the projector drains a batch even while new
+    /// mutations continue to arrive.
+    /// </summary>
+    public TimeSpan HotStateProjectionMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Gets or sets the maximum journal batches collapsed into one durable projection.</summary>
+    public int HotStateProjectionBatchSize { get; set; } = 10_000;
+
+    /// <summary>
     /// Gets or sets whether SQL Server commits are completed with a shared explicit
     /// log flush. This option requires the database to use forced delayed durability.
     /// Every caller still waits for the physical log flush before work is acknowledged;

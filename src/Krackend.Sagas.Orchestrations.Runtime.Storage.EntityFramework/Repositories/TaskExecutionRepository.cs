@@ -3,17 +3,36 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
 internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExecutionRepository, IResponseTimeoutRepairPageReader, ITaskExecutionStageReader, ITaskResponseTimeoutReferenceRepository
 {
-    public async Task<IReadOnlyCollection<TaskExecution>> GetByStageExecutionId(Id stageExecutionId, CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.Where(x => x.StageExecutionId == stageExecutionId).ToArrayAsync(cancellationToken);
+    private readonly IRuntimeHotStateStore _hotState;
 
-    public TaskExecutionRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
+    public async Task<IReadOnlyCollection<TaskExecution>> GetByStageExecutionId(Id stageExecutionId, CancellationToken cancellationToken = default)
+    {
+        var durable = await DbContext.TaskExecutions.Where(x => x.StageExecutionId == stageExecutionId).ToArrayAsync(cancellationToken);
+        if (_hotState?.IsEnabled != true) return durable;
+        var instanceId = durable.FirstOrDefault()?.OrchestrationInstanceId;
+        if (instanceId is null)
+        {
+            var stage = RuntimeHotStateEntityCodec.Deserialize<StageExecution>(
+                await _hotState.TryReadAsync(typeof(StageExecution).FullName!, stageExecutionId.ToString(), cancellationToken));
+            instanceId = stage?.OrchestrationInstanceId;
+        }
+        if (instanceId is null) return durable;
+        var hot = await ReadHot(instanceId.Value, cancellationToken);
+        return durable.Concat(hot.Where(item => item.StageExecutionId == stageExecutionId))
+            .GroupBy(item => item.Id).Select(group => group.Last()).ToArray();
+    }
+
+    public TaskExecutionRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork,
+        IRuntimeHotStateStore hotState = null)
         : base(dbContext, unitOfWork)
     {
+        _hotState = hotState;
     }
 
     public async Task Create(TaskExecution taskExecution, CancellationToken cancellationToken = default)
@@ -43,8 +62,18 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
     }
 
     public async Task<TaskExecution> GetById(Id taskExecutionId, CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.FindAsync([taskExecutionId], cancellationToken)
+    {
+        if (_hotState?.IsEnabled == true)
+        {
+            var hot = RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
+                await _hotState.TryReadAsync(typeof(TaskExecution).FullName!, taskExecutionId.ToString(), cancellationToken));
+            if (hot is not null) return hot;
+        }
+        var durable = await DbContext.TaskExecutions.FindAsync([taskExecutionId], cancellationToken)
             ?? throw new KeyNotFoundException($"Task execution '{taskExecutionId}' was not found.");
+        await Cache(durable, cancellationToken);
+        return durable;
+    }
 
     public async Task<bool> TryCaptureTimeoutAction(
         Id taskExecutionId,
@@ -61,17 +90,43 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
                 .SetProperty(x => x.TimeoutActionLane, lane), cancellationToken) == 1;
 
     public async Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(x => x.CorrelationId == correlationId, cancellationToken)
+    {
+        if (_hotState?.IsEnabled == true)
+        {
+            var hot = RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
+                await _hotState.TryReadByIndexAsync(typeof(TaskExecution).FullName!, "correlation", correlationId, cancellationToken));
+            if (hot is not null) return hot;
+        }
+        var durable = await DbContext.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(x => x.CorrelationId == correlationId, cancellationToken)
             ?? throw new KeyNotFoundException($"Task execution with correlation id '{correlationId}' was not found.");
+        await Cache(durable, cancellationToken);
+        return durable;
+    }
 
     public async Task<TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.FirstOrDefaultAsync(x => x.StageExecutionId == stageExecutionId && x.TaskKey == taskKey, cancellationToken)
+    {
+        if (_hotState?.IsEnabled == true)
+        {
+            var hot = RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
+                await _hotState.TryReadByIndexAsync(typeof(TaskExecution).FullName!, "stage-task", $"{stageExecutionId}|{taskKey}", cancellationToken));
+            if (hot is not null) return hot;
+        }
+        var durable = await DbContext.TaskExecutions.FirstOrDefaultAsync(
+            x => x.StageExecutionId == stageExecutionId && x.TaskKey == taskKey, cancellationToken)
             ?? throw new KeyNotFoundException($"Task execution '{taskKey}' was not found for stage '{stageExecutionId}'.");
+        await Cache(durable, cancellationToken);
+        return durable;
+    }
 
     public async Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions
+    {
+        var durable = await DbContext.TaskExecutions
             .Where(x => x.OrchestrationInstanceId == instanceId)
             .ToArrayAsync(cancellationToken);
+        if (_hotState?.IsEnabled != true) return durable;
+        var hot = await ReadHot(instanceId, cancellationToken);
+        return durable.Concat(hot).GroupBy(item => item.Id).Select(group => group.Last()).ToArray();
+    }
 
     public async Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
         => await DbContext.TaskExecutions.AsNoTracking()
@@ -183,4 +238,16 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
                      instance.Status == OrchestrationInstanceStatus.Compensating)))
             .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
             .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArrayAsync(cancellationToken);
+
+    private async Task<TaskExecution[]> ReadHot(Id instanceId, CancellationToken cancellationToken)
+    {
+        var records = await _hotState!.ReadByInstanceAsync(typeof(TaskExecution).FullName!, instanceId, cancellationToken);
+        return records.Select(RuntimeHotStateEntityCodec.Deserialize<TaskExecution>)
+            .Where(item => item is not null).Cast<TaskExecution>().ToArray();
+    }
+
+    private Task Cache(TaskExecution entity, CancellationToken cancellationToken)
+        => _hotState?.IsEnabled == true
+            ? _hotState.CacheAsync(RuntimeHotStateEntityCodec.CreateCacheMutation(entity), cancellationToken)
+            : Task.CompletedTask;
 }

@@ -3,11 +3,14 @@ using Krackend.Demo.RuntimeHost;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.ButterMorph.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
+using Krackend.Sagas.Orchestrations.Runtime.HotState.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
@@ -34,8 +37,9 @@ ThreadPool.SetMinThreads(
     Math.Max(currentWorkerThreads, runtimeMinThreads),
     Math.Max(currentIoThreads, runtimeMinThreads));
 var useRedisAcceleration = builder.Configuration.GetValue("Demo:UseRedisAcceleration", false);
+var useRuntimeHotState = builder.Configuration.GetValue("Demo:UseRuntimeHotState", false);
 var muleRedis = builder.Configuration.GetConnectionString("MuleRedis");
-if (useRedisAcceleration && string.IsNullOrWhiteSpace(muleRedis))
+if ((useRedisAcceleration || useRuntimeHotState) && string.IsNullOrWhiteSpace(muleRedis))
     throw new InvalidOperationException("Set ConnectionStrings:MuleRedis.");
 var fastLaneIntentFlushSize = Math.Clamp(
     builder.Configuration.GetValue("Demo:RedisAcceleration:IntentFlushSize", 1_000),
@@ -66,7 +70,7 @@ var coordinateSqlServerDurableLogFlushes = !usePostgres && builder.Configuration
     false);
 var muleKeyPrefix = builder.Configuration["Demo:MuleKeyPrefix"] ??
     $"krackend:demo:runtime:{(usePostgres ? "postgresql" : "sqlserver")}:v3";
-if (useRedisAcceleration)
+if (useRedisAcceleration || useRuntimeHotState)
     builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(muleRedis!));
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSingleton<RuntimeMetricsProbe>();
@@ -100,6 +104,9 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
         storage.EmbedCurrentTransportState = true;
         storage.CompressSnapshotPayload = true;
         storage.PersistStatisticsObservations = false;
+        storage.HotStateProjectionInterval = TimeSpan.FromMilliseconds(750);
+        storage.HotStateProjectionMaxDelay = TimeSpan.FromSeconds(15);
+        storage.HotStateProjectionBatchSize = 10_000;
         storage.CoordinateSqlServerDurableLogFlushes = coordinateSqlServerDurableLogFlushes;
         storage.SqlServerDurableLogFlushWindow = TimeSpan.FromMilliseconds(Math.Clamp(
             builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushWindowMilliseconds", 8),
@@ -154,10 +161,22 @@ builder.Services.AddKrackendOrchestrationsRuntime().AddPigeon(builder.Configurat
     // cancelling one Mule action for every healthy awaited task; the indexed
     // deadline scan below remains the durable crash-safe timeout mechanism.
     .UseDeadlineScanningResponseTimeouts();
+if (useRuntimeHotState)
+{
+    builder.Services.AddKrackendRuntimeHotStateRedis(options =>
+    {
+        options.ConnectionFactory = (provider, _) =>
+            ValueTask.FromResult(provider.GetRequiredService<IConnectionMultiplexer>());
+        options.DisposeConnection = false;
+        options.Database = 5;
+        options.KeyPrefix = builder.Configuration["Demo:RuntimeHotStateKeyPrefix"] ??
+            $"krackend:demo:runtime:{(usePostgres ? "postgresql" : "sqlserver")}:hot:v1";
+    });
+}
 builder.Services.Configure<OrchestrationTimeoutOptions>(options =>
     options.ScanIntervalSeconds = 1);
 builder.Services.Configure<OrchestrationCoordinationOptions>(options =>
-    options.DistributedLeaseEnabled = false);
+    options.DistributedLeaseEnabled = useRuntimeHotState);
 builder.Services.Configure<MuleSettings>(settings =>
 {
     settings.ImmediateDispatch = true;
@@ -724,18 +743,36 @@ app.MapGet("/demo/process", () =>
         }
     };
 });
-app.MapGet("/demo/instances/{requestId}", async (string requestId, RuntimeDbContext db, CancellationToken ct) => new
+app.MapGet("/demo/instances/{requestId}", async (string requestId, IRuntimeDiagnosticsReader diagnostics,
+    RuntimeDbContext db, CancellationToken ct) =>
 {
-    instances = await db.OrchestrationInstances.AsNoTracking().Where(x => x.CorrelationId == requestId)
-        .Select(x => new { x.Id, Status = x.Status.ToString(), x.StartedOnUtc, x.LastUpdatedOnUtc }).ToArrayAsync(ct),
-    actions = await db.Set<DurableAction>().AsNoTracking().Where(x => x.CorrelationId == requestId)
-        .Select(x => new { x.Id, x.Key, x.Status, x.Attempts, x.LastError, x.DeferralReasonCode }).ToArrayAsync(ct)
+    var catalog = (IRuntimeInstanceCatalogReader)diagnostics;
+    var page = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(
+        1, 10, requestId, Sort: RuntimeInstanceCatalogSort.Updated, Descending: true)
+        { IncludeTotalCount = false }, ct);
+    return new
+    {
+        instances = page.Items.Where(x => string.Equals(x.CorrelationId, requestId, StringComparison.Ordinal))
+            .Select(x => new { x.Id, x.Status, x.StartedOnUtc, x.LastUpdatedOnUtc }).ToArray(),
+        actions = await db.Set<DurableAction>().AsNoTracking().Where(x => x.CorrelationId == requestId)
+            .Select(x => new { x.Id, x.Key, x.Status, x.Attempts, x.LastError, x.DeferralReasonCode }).ToArrayAsync(ct)
+    };
 });
-app.MapGet("/demo/runs/{runId}/instances", async (string runId, RuntimeDbContext db, CancellationToken ct) =>
-    await db.OrchestrationInstances.AsNoTracking()
-        .Where(x => x.CorrelationId.StartsWith(runId))
-        .Select(x => new { x.Id, x.CorrelationId, Status = x.Status.ToString(), x.StartedOnUtc, x.LastUpdatedOnUtc })
-        .ToArrayAsync(ct));
+app.MapGet("/demo/runs/{runId}/instances", async (string runId, IRuntimeDiagnosticsReader diagnostics, CancellationToken ct) =>
+{
+    var catalog = (IRuntimeInstanceCatalogReader)diagnostics;
+    var results = new List<InstanceRowModel>();
+    for (var pageNumber = 1; ; pageNumber++)
+    {
+        var page = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(
+            pageNumber, 100, runId, Sort: RuntimeInstanceCatalogSort.Started, Descending: true)
+            { IncludeTotalCount = false }, ct);
+        results.AddRange(page.Items.Where(x => x.CorrelationId.StartsWith(runId, StringComparison.Ordinal)));
+        if (page.HasMore != true) break;
+    }
+    return results.DistinctBy(x => x.Id)
+        .Select(x => new { x.Id, x.CorrelationId, x.Status, x.StartedOnUtc, x.LastUpdatedOnUtc }).ToArray();
+});
 await app.RunAsync();
 
 static async Task EnsureSqlServerMemoryOptimizedDatabaseAsync(string connectionString)

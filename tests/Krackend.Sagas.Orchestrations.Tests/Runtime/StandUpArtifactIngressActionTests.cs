@@ -13,6 +13,67 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class StandUpArtifactIngressActionTests
 {
     [Fact]
+    public async Task Scheduler_WhenDirectStandupSucceeds_DoesNotCreateMuleAction()
+    {
+        var artifactId = Id.New();
+        var client = Substitute.For<IMuleClient>();
+        var registry = Substitute.For<IIngressRegistry>();
+        var scheduler = new MuleRuntimeIngressStandupScheduler(
+            client,
+            new TestRuntimeReplicaIdentity(),
+            registry,
+            new RecordingRuntimeArtifactRepository(),
+            NullLogger<MuleRuntimeIngressStandupScheduler>.Instance);
+        var request = new RuntimeIngressStandupRequest
+        {
+            ArtifactId = artifactId.ToString(),
+            IngressGeneration = 3,
+            Reason = "test",
+            RequestedOnUtc = DateTime.UtcNow
+        };
+
+        await scheduler.ScheduleStandupAsync(request);
+
+        await registry.Received(1).StandUpOneAsync(artifactId.ToString(), 3, Arg.Any<CancellationToken>());
+        await client.DidNotReceiveWithAnyArgs().EnqueueAsync(
+            default, default(RuntimeIngressStandupRequest)!, default!, default);
+    }
+
+    [Fact]
+    public async Task Scheduler_WhenDirectStandupFailsTransiently_EnqueuesDurableRetry()
+    {
+        var artifactId = Id.New();
+        var client = Substitute.For<IMuleClient>();
+        client.EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<RuntimeIngressStandupRequest>(),
+                Arg.Any<Action<EnqueueOptions>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Mule.Ulid>(Mule.Ulid.NewUlid()));
+        var scheduler = new MuleRuntimeIngressStandupScheduler(
+            client,
+            new TestRuntimeReplicaIdentity(),
+            new TransientFailureIngressRegistry("broker unavailable"),
+            new RecordingRuntimeArtifactRepository(),
+            NullLogger<MuleRuntimeIngressStandupScheduler>.Instance);
+        var request = new RuntimeIngressStandupRequest
+        {
+            ArtifactId = artifactId.ToString(),
+            IngressGeneration = 3,
+            Reason = "test",
+            RequestedOnUtc = DateTime.UtcNow
+        };
+
+        await scheduler.ScheduleStandupAsync(request);
+
+        await client.Received(1).EnqueueAsync(
+            Arg.Is<ActionKey>(key => key.ToString() == RuntimeArtifactActionNames.StandUpArtifactIngress),
+            request,
+            Arg.Any<Action<EnqueueOptions>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenLaneBelongsToAnotherReplica_SkipsStandup()
     {
         var repository = new RecordingRuntimeArtifactRepository();

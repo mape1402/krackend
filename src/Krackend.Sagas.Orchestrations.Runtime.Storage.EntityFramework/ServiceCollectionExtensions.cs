@@ -12,6 +12,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 using Krackend.Sagas.Orchestrations.Runtime.Statistics;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,9 @@ public static class ServiceCollectionExtensions
         services.AddOptions<RuntimeHistoryRetentionOptions>().BindConfiguration("Runtime:HistoryRetention");
         services.TryAddScoped<IRuntimeHistoryRetentionProcessor, RuntimeHistoryRetentionProcessor>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeHistoryRetentionBackgroundService>());
+        services.TryAddScoped<IRuntimeHotStateProjectionSink, EntityFrameworkRuntimeHotStateProjectionSink>();
+        services.TryAddSingleton<RuntimeHotStateProjectionActivity>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeHotStateProjectionBackgroundService>());
 
         var storageOptions = new RuntimeEntityFrameworkStorageOptions();
         configureStorage?.Invoke(storageOptions);
@@ -58,6 +62,9 @@ public static class ServiceCollectionExtensions
             options.EmbedCurrentTransportState = storageOptions.EmbedCurrentTransportState;
             options.CompressSnapshotPayload = storageOptions.CompressSnapshotPayload;
             options.PersistStatisticsObservations = storageOptions.PersistStatisticsObservations;
+            options.HotStateProjectionInterval = storageOptions.HotStateProjectionInterval;
+            options.HotStateProjectionMaxDelay = storageOptions.HotStateProjectionMaxDelay;
+            options.HotStateProjectionBatchSize = storageOptions.HotStateProjectionBatchSize;
             options.CoordinateSqlServerDurableLogFlushes = storageOptions.CoordinateSqlServerDurableLogFlushes;
             options.SqlServerDurableLogFlushWindow = storageOptions.SqlServerDurableLogFlushWindow;
             options.SqlServerDurableLogFlushConcurrency = storageOptions.SqlServerDurableLogFlushConcurrency;
@@ -113,7 +120,9 @@ public static class ServiceCollectionExtensions
         else
         {
             services.Replace(ServiceDescriptor.Scoped<OperationalSagaStatisticsReader>(provider =>
-                new OperationalSagaStatisticsReader(provider.GetRequiredService<RuntimeDbContext>())));
+                new OperationalSagaStatisticsReader(
+                    provider.GetRequiredService<RuntimeDbContext>(),
+                    provider.GetRequiredService<IRuntimeHotStateStore>())));
             services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<OperationalSagaStatisticsReader>()));
             services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<OperationalSagaStatisticsReader>()));
         }
