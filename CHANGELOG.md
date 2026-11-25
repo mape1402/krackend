@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v6.5.2] - 2026-11-24
 
+### Added
+
+- Add the optional Redis saga-aggregate hot-state provider with isolated projection lanes and asynchronous durable projection; EF storage remains the direct durable path when Redis hot state is not configured.
+- Add SQL Server provider extensions that contribute portable physical storage structures to host-owned EF models and migrations.
+
 ### Changed
 
 - Package the portable SQL Server runtime physical model so host-owned EF migrations generate the required catalog, deadline, and recovery indexes with their covering columns.
@@ -26,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve parallel runtime intake under sustained load without carrying unfinished work into the next scheduled block.
 - Remove startup-time schema mutation and elevated database permissions from the runtime host; database changes are now emitted through host-owned EF migrations and deployment scripts.
 - Pin the SQL Server provider to the patched `System.Security.Cryptography.Pkcs` line so published packages do not resolve the vulnerable transitive version from `Microsoft.Data.SqlClient`.
+- Recover compensation dispatches through short-lived durable claims while transport work runs outside the saga lease, including expired claims left by a stopped Runtime process.
+- Repair overdue response timers and missing dispatch work without blocking live trigger and backchannel traffic.
+- Keep staged ingress routes out of active selection and retry transient rollout or rollback projection failures instead of marking the operation terminal prematurely.
 
 ### Upgrade notes
 
