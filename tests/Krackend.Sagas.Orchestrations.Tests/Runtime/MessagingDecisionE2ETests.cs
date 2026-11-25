@@ -625,6 +625,12 @@ public sealed class MessagingDecisionE2ETests
         await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires compensation"));
         await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "duplicate failure callback"));
 
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetCompensationsAsync(completedCommand))
+                .SingleOrDefault()?.Status == "Completed");
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetInstanceAsync(completedCommand)).Status == OrchestrationInstanceStatus.Compensated);
+
         var instance = await harness.GetInstanceAsync(completedCommand);
         var compensations = await harness.GetCompensationsAsync(completedCommand);
         var transitions = await harness.GetTransitionsAsync(completedCommand);
@@ -632,8 +638,8 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Compensated, instance.Status);
         Assert.Single(compensations);
         Assert.Equal(1, harness.Dispatcher.Commands.Count(command =>
-            command.SettingsPayload.Contains("task.completed.once.undo", StringComparison.Ordinal)));
-        Assert.Equal(1, transitions.Count(transition => transition.TransitionType == "CompensationCompleted"));
+            command.TaskKey == "task.completed.once" && !command.AwaitResponse));
+        Assert.Equal(1, transitions.Count(transition => transition.TransitionType == "CompensationDispatchRecovered"));
     }
 
     [Fact]
@@ -2444,6 +2450,10 @@ public sealed class MessagingDecisionE2ETests
         var failingCommand = harness.Dispatcher.Commands[1];
         await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires compensation"));
 
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetTransitionsAsync(completedCommand))
+                .Any(transition => transition.TransitionType == "CompensationDispatchRecoveryFailed"));
+
         var instance = await harness.GetInstanceAsync(completedCommand);
         var compensations = await harness.GetCompensationsAsync(completedCommand);
         var transitions = await harness.GetTransitionsAsync(completedCommand);
@@ -2451,7 +2461,7 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal("Failed", compensations.Single().Status);
         Assert.Equal("compensation broker unavailable", compensations.Single().ErrorMessage);
-        Assert.Contains(transitions, transition => transition.TransitionType == "CompensationFailed");
+        Assert.Contains(transitions, transition => transition.TransitionType == "CompensationDispatchRecoveryFailed");
     }
 
     [Fact]
@@ -2469,6 +2479,12 @@ public sealed class MessagingDecisionE2ETests
         var failingCommand = harness.Dispatcher.Commands.Single();
         await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires trigger compensation"));
 
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetTransitionsAsync(failingCommand))
+                .Any(transition => transition.TransitionType == "CompensationDispatchRecovered"));
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetInstanceAsync(failingCommand)).Status == OrchestrationInstanceStatus.Compensated);
+
         var instance = await harness.GetInstanceAsync(failingCommand);
         var compensations = await harness.GetCompensationsAsync(failingCommand);
         var compensationCommand = harness.Dispatcher.Commands.Last();
@@ -2480,7 +2496,7 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal("Trigger", compensation.Metadata["SourceElementType"]!.GetValue<string>());
         Assert.StartsWith("trigger:", compensationCommand.TaskKey, StringComparison.Ordinal);
         Assert.Contains("trigger.undo", compensationCommand.SettingsPayload);
-        Assert.Contains(transitions, transition => transition.TransitionType == "TriggerCompensationCompleted");
+        Assert.Contains(transitions, transition => transition.TransitionType == "CompensationDispatchRecovered");
     }
 
     [Fact]

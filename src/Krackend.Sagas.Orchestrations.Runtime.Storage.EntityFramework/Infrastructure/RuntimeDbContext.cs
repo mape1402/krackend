@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Mule;
 using Mule.EntityFrameworkCore;
@@ -46,7 +47,7 @@ public sealed class RuntimeDbContext : DbContext
         DbContextOptions<RuntimeDbContext> options,
         RuntimeEntityFrameworkStorageOptions storageOptions,
         RuntimeMutationLeaseScope mutationLease)
-        : base(options)
+        : base(ConfigureWarnings(options))
     {
         ArgumentNullException.ThrowIfNull(storageOptions);
         this.storageOptions = storageOptions;
@@ -66,6 +67,13 @@ public sealed class RuntimeDbContext : DbContext
         IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions,
         RuntimeMutationLeaseScope mutationLease = null)
         => new(options, storageOptions?.Value ?? throw new ArgumentNullException(nameof(storageOptions)), mutationLease);
+
+    private static DbContextOptions<RuntimeDbContext> ConfigureWarnings(
+        DbContextOptions<RuntimeDbContext> options)
+        => new DbContextOptionsBuilder<RuntimeDbContext>(options)
+            .ConfigureWarnings(warnings =>
+                warnings.Log(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
     public DbSet<RuntimeOrchestrationArtifact> RuntimeOrchestrationArtifacts => Set<RuntimeOrchestrationArtifact>();
 
