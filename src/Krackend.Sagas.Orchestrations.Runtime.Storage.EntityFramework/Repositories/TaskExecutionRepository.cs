@@ -141,29 +141,17 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
         var limit = Math.Max(1, take);
         // Query projected deadlines first using the status/deadline index. Legacy waits without a deadline
         // may have no timeout policy and must not repeatedly fill the page ahead of expired deadlines.
-        var due = await DbContext.TaskExecutions.AsNoTracking()
+        var due = await ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)))
+                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc)
             .OrderBy(x => x.ResponseDeadlineUtc)
             .Take(limit)
             .ToArrayAsync(cancellationToken);
         if (due.Length == limit) return due;
 
-        var legacy = await DbContext.TaskExecutions.AsNoTracking()
+        var legacy = await ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)))
+                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)
             .OrderBy(x => x.WaitingSinceUtc)
             .Take(limit - due.Length)
             .ToArrayAsync(cancellationToken);
@@ -173,16 +161,10 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
     public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingAction(
         int take = 100,
         CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.AsNoTracking()
+        => await ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
                 x.ResponseDeadlineUtc != null &&
-                string.IsNullOrWhiteSpace(x.TimeoutActionId) &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)))
+                string.IsNullOrWhiteSpace(x.TimeoutActionId))
             .OrderBy(x => x.ResponseDeadlineUtc)
             .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
@@ -192,29 +174,17 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
     {
         var offset = Math.Max(0, skip);
         var limit = Math.Max(1, take);
-        var projected = DbContext.TaskExecutions.AsNoTracking()
+        var projected = ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)));
+                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc);
         var due = await projected.OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
             .Skip(offset).Take(limit).ToArrayAsync(cancellationToken);
         if (due.Length == limit) return due;
 
         var legacyOffset = offset == 0 ? 0 : Math.Max(0, offset - await projected.CountAsync(cancellationToken));
-        var legacy = await DbContext.TaskExecutions.AsNoTracking()
+        var legacy = await ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)))
+                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)
             .OrderBy(x => x.WaitingSinceUtc).ThenBy(x => x.Id)
             .Skip(legacyOffset).Take(limit - due.Length).ToArrayAsync(cancellationToken);
         return due.Concat(legacy).ToArray();
@@ -225,19 +195,28 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
         int skip,
         int take,
         CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.AsNoTracking()
+        => await ActiveTaskExecutions()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
                 x.ResponseDeadlineUtc != null &&
                 x.ResponseDeadlineUtc <= dueOnOrBeforeUtc &&
-                string.IsNullOrWhiteSpace(x.TimeoutActionId) &&
-                DbContext.OrchestrationInstances.Any(instance => instance.Id == x.OrchestrationInstanceId &&
-                    (instance.Status == OrchestrationInstanceStatus.Created ||
-                     instance.Status == OrchestrationInstanceStatus.Running ||
-                     instance.Status == OrchestrationInstanceStatus.Idle ||
-                     instance.Status == OrchestrationInstanceStatus.Waiting ||
-                     instance.Status == OrchestrationInstanceStatus.Compensating)))
+                string.IsNullOrWhiteSpace(x.TimeoutActionId))
             .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
             .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArrayAsync(cancellationToken);
+
+    private IQueryable<TaskExecution> ActiveTaskExecutions()
+        => DbContext.TaskExecutions.AsNoTracking()
+            .Join(
+                DbContext.OrchestrationInstances,
+                task => task.OrchestrationInstanceId,
+                instance => instance.Id,
+                (task, instance) => new { Task = task, Instance = instance })
+            .Where(pair =>
+                pair.Instance.Status == OrchestrationInstanceStatus.Created ||
+                pair.Instance.Status == OrchestrationInstanceStatus.Running ||
+                pair.Instance.Status == OrchestrationInstanceStatus.Idle ||
+                pair.Instance.Status == OrchestrationInstanceStatus.Waiting ||
+                pair.Instance.Status == OrchestrationInstanceStatus.Compensating)
+            .Select(pair => pair.Task);
 
     private async Task<TaskExecution[]> ReadHot(Id instanceId, CancellationToken cancellationToken)
     {

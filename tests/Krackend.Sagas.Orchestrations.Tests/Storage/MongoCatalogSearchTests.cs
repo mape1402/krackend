@@ -62,6 +62,18 @@ public sealed class MongoCatalogSearchTests
         var now = DateTime.UtcNow;
         var instanceId = Id.New();
         var stageId = Id.New();
+        await scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>().Create(new OrchestrationInstance
+        {
+            Id = instanceId,
+            RuntimeOrchestrationArtifactId = Id.New(),
+            OrchestrationDefinitionKey = "mongo.recovery",
+            CorrelationId = $"mongo-recovery-{instanceId}",
+            SagaId = instanceId.ToString(),
+            ExecutionKey = $"mongo.recovery:{instanceId}",
+            Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = now.AddMinutes(-5),
+            LastUpdatedOnUtc = now
+        });
         for (var index = 0; index < 3; index++)
             await repo.Create(new TaskExecution
             {
