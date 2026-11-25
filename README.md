@@ -14,9 +14,11 @@ Krackend runtime libraries, hosts, and samples target .NET 10. Applications cons
 
 ## Version 6.5 highlights
 
-`v6.5.1` keeps the parallel Runtime fast path introduced in 6.5 while repairing overdue instances through a bounded parallel reconciliation pass that yields to live traffic. Timeout, retry, compensation, and stop decisions reuse the authoritative state tracked by the active saga mutation, including compensation records created and dispatched in one commit. Runtime dashboards retain their canonical-state fallback, while Instances and History use uncounted server paging and a newest-first index instead of scanning the complete history. No direct data repair is required.
+`v6.5.2` packages the portable SQL Server performance model in `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer`. Runtime and design-time hosts opt in with `UseKrackendSqlServerRuntime()`, after which host-owned EF migrations generate the hot-path indexes, covering columns, row compression, fill factors, and distributed clustered storage required by the provider. The running application never creates or alters database structures.
 
-No database columns or data migration are added; existing SQL Server memory-optimized databases should reconcile the descending `StartedOnUtc, Id` catalog index when upgrading. Hosts continue to choose and configure their EF providers. Mule 2.3.2 does not include the separate fix for a Redis FastLane terminal action whose durable record is missing.
+The release preserves parallel intake while moving timeout, dispatch, compensation, and reconciliation recovery outside the active saga lease. Recoverable compensation claims, overdue timers, and transient rollout or rollback failures can resume without leaving instances permanently Running. Runtime dashboards keep their canonical-state fallback, while Instances and History retain uncounted server paging and newest-first indexes.
+
+Upgrading a SQL Server host requires a host-owned EF migration. Generate an idempotent script and have a DBA apply it before rolling out the Runtime; afterward the application identity needs only normal DML permissions. The portable row-store path supports SQL Server and Azure SQL Database and does not require Service Broker, In-Memory OLTP, startup DDL, or database-owner permissions. Optional Redis hot state remains opt-in; SQL Server-only hosts use the durable EF path directly.
 
 ## Version 6.4 highlights
 
@@ -99,9 +101,12 @@ Saga orchestration runtime packages:
 ```bash
 dotnet add package Krackend.Sagas.Orchestrations.Runtime
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.HotState.Redis
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.ButterMorph
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.WebUI
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Api
@@ -525,6 +530,20 @@ available through `ApplyKrackendSqlServerPortableTuning()` when a DBA explicitly
 it, but it is not required for the runtime package or its portable performance path.
 The SQL Server runtime sample contains the complete design-time factory, generated
 migration, deployment script, and least-privilege grant example.
+
+For a `v6.5.2` SQL Server upgrade, update the provider package first, keep the same
+configuration in the running host and its design-time factory, and let the host own
+the migration and deployment script:
+
+```bash
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer --version 6.5.2
+dotnet ef migrations add OptimizeKrackendRuntimeStorage --context RuntimeDbContext
+dotnet ef migrations script --idempotent --context RuntimeDbContext --output KrackendRuntime.idempotent.sql
+```
+
+Review and apply the generated script before deploying the new Runtime binaries.
+Existing hosts may choose their own migration name and output path; no Krackend
+startup task applies these changes automatically.
 
 The same host customization pattern is available for Control Plane storage.
 
