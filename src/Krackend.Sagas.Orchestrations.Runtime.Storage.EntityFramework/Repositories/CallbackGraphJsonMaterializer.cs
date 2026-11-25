@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal static class CallbackGraphJsonMaterializer
+public static class CallbackGraphJsonMaterializer
 {
     public static JsonSerializerOptions CreateSerializerOptions(JsonConverter<Id> idConverter)
     {

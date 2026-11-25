@@ -24,4 +24,15 @@ public sealed class RuntimeReconciliationOptions
     /// Gets or sets the minimum instance age before a running instance without active work can be recovered.
     /// </summary>
     public int ProgressRecoveryGraceSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Gets or sets how long reconciliation waits after realtime ingress becomes quiet.
+    /// </summary>
+    public int ForegroundQuietPeriodMilliseconds { get; set; } = 250;
+
+    /// <summary>
+    /// Gets or sets the longest time reconciliation yields continuously before one
+    /// bounded maintenance pass is allowed.
+    /// </summary>
+    public int MaxDeferralSeconds { get; set; } = 45;
 }

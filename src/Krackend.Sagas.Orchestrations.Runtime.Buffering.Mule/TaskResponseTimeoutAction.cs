@@ -21,7 +21,7 @@ public sealed class TaskResponseTimeoutAction(
     private async Task ExecuteCoreAsync(MuleActionContext<TaskResponseTimeoutActionRequest> context, CancellationToken cancellationToken)
     {
         var request = context.Payload ?? throw new InvalidOperationException("Task response timeout payload cannot be empty.");
-        var result = await processor.ProcessTaskTimeoutAsync(
+        var result = await processor.ProcessScheduledTaskTimeoutAsync(
             new Id(System.Ulid.Parse(request.OrchestrationInstanceId)),
             new Id(System.Ulid.Parse(request.TaskExecutionId)),
             DateTime.UtcNow,

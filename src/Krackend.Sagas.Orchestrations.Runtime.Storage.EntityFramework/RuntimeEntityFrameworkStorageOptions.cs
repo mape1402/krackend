@@ -61,29 +61,21 @@ public sealed class RuntimeEntityFrameworkStorageOptions
     /// </summary>
     public TimeSpan HotStateProjectionMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Gets or sets whether an aged durable projection may preempt an active or
+    /// recently active foreground burst. Disabled by default because the Redis
+    /// journal is already the durable acknowledgement boundary.
+    /// </summary>
+    public bool AllowHotStateProjectionDuringForeground { get; set; }
+
     /// <summary>Gets or sets the maximum journal batches collapsed into one durable projection.</summary>
     public int HotStateProjectionBatchSize { get; set; } = 10_000;
 
     /// <summary>
-    /// Gets or sets whether SQL Server commits are completed with a shared explicit
-    /// log flush. This option requires the database to use forced delayed durability.
-    /// Every caller still waits for the physical log flush before work is acknowledged;
-    /// concurrent transactions merely share that flush instead of issuing one each.
+    /// Gets or sets optional operations supplied by the selected database-provider
+    /// package. The common adapter never selects or identifies a provider itself.
     /// </summary>
-    public bool CoordinateSqlServerDurableLogFlushes { get; set; }
-
-    /// <summary>
-    /// Gets or sets the short collection window used to group already-committed SQL
-    /// Server transactions into one durable log flush.
-    /// </summary>
-    public TimeSpan SqlServerDurableLogFlushWindow { get; set; } = TimeSpan.FromMilliseconds(4);
-
-    /// <summary>
-    /// Gets or sets the maximum number of physical SQL Server log flush commands that
-    /// may be in flight for one database. This does not limit saga or transaction
-    /// concurrency; commits waiting for a physical slot coalesce behind one barrier.
-    /// </summary>
-    public int SqlServerDurableLogFlushConcurrency { get; set; } = 4;
+    public RuntimeEntityFrameworkProviderOptimizations? ProviderOptimizations { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether Data Protection keys used for distribution secrets are stored in the runtime database.

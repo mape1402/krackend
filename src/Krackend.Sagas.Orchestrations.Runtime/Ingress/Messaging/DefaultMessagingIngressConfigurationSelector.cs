@@ -39,7 +39,10 @@ public sealed class DefaultMessagingIngressConfigurationSelector : IMessagingIng
         var matches = new List<(IngressConfiguration Configuration, MessagingConfiguration Settings)>();
         foreach (var configuration in configurations)
         {
-            if (TryMatch(configuration, topic, version, out var settings))
+            // Staged routes only prove that the physical consumer can be started.
+            // They must not own deliveries until the durable rollout handoff has
+            // completed and the route has been refreshed as active.
+            if (!configuration.IsStaged && TryMatch(configuration, topic, version, out var settings))
             {
                 matches.Add((configuration, settings));
             }

@@ -10,6 +10,13 @@ internal sealed class RuntimeHotStateProjectionActivity
 {
     private long _firstPendingTimestamp;
     private long _lastMutationTimestamp;
+    private int _activeForegroundTransactions;
+
+    public void BeginForeground()
+        => Interlocked.Increment(ref _activeForegroundTransactions);
+
+    public void EndForeground()
+        => Interlocked.Decrement(ref _activeForegroundTransactions);
 
     public void MarkPending()
     {
@@ -18,14 +25,20 @@ internal sealed class RuntimeHotStateProjectionActivity
         Interlocked.Exchange(ref _lastMutationTimestamp, now);
     }
 
-    public bool ShouldDefer(TimeSpan quietPeriod, TimeSpan maximumDelay)
+    public bool ShouldDefer(
+        TimeSpan quietPeriod,
+        TimeSpan maximumDelay,
+        bool allowForegroundPreemption)
     {
         var first = Interlocked.Read(ref _firstPendingTimestamp);
         if (first == 0) return false;
-        if (Stopwatch.GetElapsedTime(first) >= maximumDelay) return false;
-
         var last = Interlocked.Read(ref _lastMutationTimestamp);
-        return last != 0 && Stopwatch.GetElapsedTime(last) < quietPeriod;
+        var recentlyActive = last != 0 && Stopwatch.GetElapsedTime(last) < quietPeriod;
+        if (!allowForegroundPreemption &&
+            (Volatile.Read(ref _activeForegroundTransactions) > 0 || recentlyActive))
+            return true;
+        if (Stopwatch.GetElapsedTime(first) >= maximumDelay) return false;
+        return recentlyActive;
     }
 
     public void MarkDrained()

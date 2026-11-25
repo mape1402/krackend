@@ -3,10 +3,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
-using System.Data;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
@@ -16,6 +14,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     private static readonly ConcurrentDictionary<string, bool> ProvidersWithoutStatusGrouping = new();
     private readonly bool _persistStatisticsObservations;
     private readonly IRuntimeHotStateStore _hotState;
+    private readonly RuntimeEntityFrameworkProviderOptimizations? _providerOptimizations;
 
     public OrchestrationInstanceRepository(
         RuntimeDbContext dbContext,
@@ -26,6 +25,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     {
         _persistStatisticsObservations = storageOptions?.Value.PersistStatisticsObservations ?? true;
         _hotState = hotState;
+        _providerOptimizations = storageOptions?.Value.ProviderOptimizations;
     }
 
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
@@ -167,10 +167,17 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 ? new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc)
                 : null;
         }
-        var transactionLockResult = await TryAcquireSqlServerTransactionLock(
-            instanceId, leaseId, cancellationToken);
+        if (!DbContext.Database.IsRelational())
+            return await TryAcquireTrackedLease(instanceId, leaseId, nowUtc, expiresOnUtc, cancellationToken);
+
+        var transactionLockResult = _providerOptimizations?.TryAcquireTransactionLockAsync is { } acquireLock
+            ? await acquireLock(DbContext, instanceId, leaseId, cancellationToken)
+            : null;
         if (transactionLockResult.HasValue)
         {
+            if (transactionLockResult.Value)
+                DbContext.MarkMutationLeaseGuarded(
+                    instanceId, leaseId, guardedByTransactionLock: true);
             return transactionLockResult.Value
                 ? new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc)
                 : null;
@@ -214,6 +221,11 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             await _hotState.ReleaseLeaseAsync(instanceId, leaseId, cancellationToken);
             return;
         }
+        if (!DbContext.Database.IsRelational())
+        {
+            await ReleaseTrackedLease(instanceId, leaseId, cancellationToken);
+            return;
+        }
         if (DbContext.IsGuardedByTransactionLock(instanceId, leaseId))
         {
             // SQL Server releases transaction-owned application locks automatically on
@@ -248,55 +260,58 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 .SetProperty(x => x.ActiveLeaseExpiresOnUtc, (DateTime?)null), cancellationToken);
     }
 
-    private async Task<bool?> TryAcquireSqlServerTransactionLock(
+    private async Task<OrchestrationInstanceLease> TryAcquireTrackedLease(
         Id instanceId,
         string leaseId,
+        DateTime nowUtc,
+        DateTime expiresOnUtc,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(
-                DbContext.Database.ProviderName,
-                "Microsoft.EntityFrameworkCore.SqlServer",
-                StringComparison.Ordinal) ||
-            DbContext.Database.CurrentTransaction is null)
+        var instance = await DbContext.OrchestrationInstances
+            .FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
+        if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) &&
+            !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal) &&
+            instance.ActiveLeaseExpiresOnUtc > nowUtc)
         {
             return null;
         }
 
-        var connection = DbContext.Database.GetDbConnection();
-        await using var command = connection.CreateCommand();
-        command.Transaction = DbContext.Database.CurrentTransaction.GetDbTransaction();
-        command.CommandType = CommandType.Text;
-        command.CommandText = """
-            DECLARE @result int;
-            EXEC @result = sys.sp_getapplock
-                @Resource = @resource,
-                @LockMode = N'Exclusive',
-                @LockOwner = N'Transaction',
-                @LockTimeout = 0,
-                @DbPrincipal = N'public';
-            SELECT @result;
-            """;
-        var resource = command.CreateParameter();
-        resource.ParameterName = "@resource";
-        resource.DbType = DbType.String;
-        resource.Size = 255;
-        resource.Value = $"Krackend:OrchestrationInstance:{instanceId}";
-        command.Parameters.Add(resource);
-
-        var scalar = await command.ExecuteScalarAsync(cancellationToken);
-        var result = Convert.ToInt32(scalar, System.Globalization.CultureInfo.InvariantCulture);
-        if (result >= 0)
+        instance.ActiveLeaseId = leaseId;
+        instance.ActiveLeaseExpiresOnUtc = expiresOnUtc;
+        try
         {
-            DbContext.MarkMutationLeaseGuarded(
-                instanceId, leaseId, guardedByTransactionLock: true);
-            return true;
+            await DbContext.SaveChangesAsync(cancellationToken);
+            DbContext.MarkMutationLeaseGuarded(instanceId, leaseId);
+            return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            DbContext.Entry(instance).State = EntityState.Detached;
+            return null;
+        }
+    }
 
-        if (result is -1 or -2 or -3)
-            return false;
+    private async Task ReleaseTrackedLease(
+        Id instanceId,
+        string leaseId,
+        CancellationToken cancellationToken)
+    {
+        var instance = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instanceId)
+            ?? await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
+        if (instance is null || !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal))
+            return;
 
-        throw new InvalidOperationException(
-            $"SQL Server could not acquire the orchestration transaction lock for '{instanceId}' (result {result}).");
+        instance.ActiveLeaseId = null;
+        instance.ActiveLeaseExpiresOnUtc = null;
+        try
+        {
+            await DbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            DbContext.Entry(instance).State = EntityState.Detached;
+        }
     }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
@@ -313,8 +328,29 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .OrderByDescending(x => x.LastUpdatedOnUtc).ThenByDescending(x => x.Id).Take(size).ToArray();
     }
 
-    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecentSummaries(int take, CancellationToken cancellationToken = default)
-        => await GetRecent(take, cancellationToken);
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecentSummaries(
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var size = Math.Max(1, take);
+        var ordered = DbContext.OrchestrationInstances.AsNoTracking()
+            .OrderByDescending(x => x.LastUpdatedOnUtc)
+            .ThenByDescending(x => x.Id);
+        if (_hotState?.IsEnabled != true)
+            return await ReadSummaries(ordered.Take(size), cancellationToken);
+
+        var overlays = await GetPendingHotInstances(cancellationToken);
+        var durable = await ReadSummaries(
+            ordered.Take(size + overlays.Length),
+            cancellationToken);
+        return durable.Concat(overlays)
+            .GroupBy(x => x.Id)
+            .Select(group => group.Last())
+            .OrderByDescending(x => x.LastUpdatedOnUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(size)
+            .ToArray();
+    }
 
     public async Task<RuntimeInstanceCatalogPage> GetPage(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {

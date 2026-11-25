@@ -501,14 +501,30 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
     });
 ```
 
-The runtime also offers optional provider packages. The host may add
-`Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer` and call
-`modelBuilder.UseKrackendSqlServerOptimizations()` inside `ConfigureModel`. The
-filtered statistics backfill index is enabled by default; pass
-`options => options.FilterStatisticsBackfillIndex = false` to disable it, or
-override the EF index configuration later in the same callback. Configure custom
-column names before applying the package's defaults. The host owns, generates,
-reviews, and applies the corresponding migrations.
+The runtime also offers an optional
+`Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer` package.
+Configure its physical model in both the runtime registration and the host's
+`IDesignTimeDbContextFactory<RuntimeDbContext>` so EF scaffolds the portable SQL
+Server indexes, row compression, fill factors, and distributed hot-table storage:
+
+```csharp
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
+    db => db.UseSqlServer(
+        builder.Configuration.GetConnectionString("Runtime"),
+        sql => sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name)),
+    storage => storage.UseKrackendSqlServerRuntime());
+```
+
+Use the same `UseKrackendSqlServerRuntime()` call in the host's design-time context
+factory. After updating the package, generate the host-owned EF migration and its
+idempotent script; the provider package contributes the required indexes and storage
+structures automatically. A DBA can apply that script before the runtime rollout.
+The runtime identity then needs only normal DML permissions and does not apply
+migrations or require database-owner permissions. Optional database-wide tuning is
+available through `ApplyKrackendSqlServerPortableTuning()` when a DBA explicitly wants
+it, but it is not required for the runtime package or its portable performance path.
+The SQL Server runtime sample contains the complete design-time factory, generated
+migration, deployment script, and least-privilege grant example.
 
 The same host customization pattern is available for Control Plane storage.
 

@@ -37,6 +37,18 @@ public interface IOrchestrationTimeoutProcessor
         CancellationToken cancellationToken = default)
         => ProcessTaskTimeoutAsync(taskExecutionId, utcNow, cancellationToken);
 
+    /// <summary>
+    /// Applies a timeout invoked by its durable timer. Reaching this method proves
+    /// that transport publication completed and the timer was persisted, even when
+    /// the optimized dispatch path intentionally omitted a second publication update.
+    /// </summary>
+    Task<TaskResponseTimeoutProcessingResult> ProcessScheduledTaskTimeoutAsync(
+        Id orchestrationInstanceId,
+        Id taskExecutionId,
+        DateTime utcNow,
+        CancellationToken cancellationToken = default)
+        => ProcessTaskTimeoutAsync(orchestrationInstanceId, taskExecutionId, utcNow, cancellationToken);
+
 }
 
 /// <summary>Optional capability for sharing artifact lookups within a timeout repair pass.</summary>

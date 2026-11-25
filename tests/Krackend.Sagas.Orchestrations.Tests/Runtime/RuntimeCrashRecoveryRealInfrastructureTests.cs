@@ -15,6 +15,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -126,8 +127,17 @@ public sealed class RuntimeCrashRecoveryRealInfrastructureTests(
         await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("start", true)), suffix);
         var valid = await PollingAssert.EventuallyAsync(
             () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(x => x.TaskKey == topic)),
-            item => item?.Status == TaskExecutionStatus.WaitingResponse && !string.IsNullOrWhiteSpace(item.TimeoutActionId),
+            item => item?.Status == TaskExecutionStatus.WaitingResponse && item.ResponseDeadlineUtc.HasValue,
             "Task was not waiting with a timer.", TimeSpan.FromSeconds(40));
+        var validAttempt = await runtime.QueryAsync(db => db.TaskExecutionAttempts.AsNoTracking()
+            .SingleAsync(item => item.TaskExecutionId == valid!.Id && item.AttemptNumber == valid.LastAttemptNumber));
+        string? validTimerId;
+        await using (var timerScope = runtime.Services.CreateAsyncScope())
+        {
+            validTimerId = await timerScope.ServiceProvider.GetRequiredService<IOrchestrationDurableWorkInspector>()
+                .FindTimeoutActionIdAsync(valid!, validAttempt);
+        }
+        Assert.False(string.IsNullOrWhiteSpace(validTimerId));
         foreach (var service in runtime.Services.GetServices<IHostedService>().Where(x =>
             x.GetType().Name is "RuntimeReconciliationBackgroundService" or "OrchestrationTimeoutBackgroundService"))
             await service.StopAsync(CancellationToken.None);
@@ -136,6 +146,8 @@ public sealed class RuntimeCrashRecoveryRealInfrastructureTests(
         {
             var row = await db.TaskExecutions.SingleAsync(x => x.Id == valid!.Id);
             row.ResponseDeadlineUtc = DateTime.UtcNow.AddMinutes(-1);
+            row.TimeoutActionId = validTimerId;
+            row.TimeoutActionLane = MuleActionKeys.TimeoutLane;
             for (var index = 0; index < 100; index++)
                 db.TaskExecutions.Add(new TaskExecution
                 {
@@ -567,9 +579,18 @@ public sealed class RuntimeCrashRecoveryRealInfrastructureTests(
             }
             if (timeoutCheck)
             {
-                Assert.Equal(OrchestrationInstanceStatus.Running, observed?.Status);
-                Assert.Equal(TaskExecutionStatus.WaitingResponse, tasks.Single(x => x.TaskKey == first).Status);
                 Assert.DoesNotContain(tasks, task => task.Status == TaskExecutionStatus.TimedOut);
+                if (observed?.Status == OrchestrationInstanceStatus.Completed)
+                {
+                    Assert.All(tasks, task => Assert.Equal(TaskExecutionStatus.Completed, task.Status));
+                    Assert.Equal(1, downstream.Scenario.CountInvocations(first));
+                    Assert.Equal(1, downstream.Scenario.CountInvocations(second));
+                }
+                else
+                {
+                    Assert.Equal(OrchestrationInstanceStatus.Running, observed?.Status);
+                    Assert.Equal(TaskExecutionStatus.WaitingResponse, tasks.Single(x => x.TaskKey == first).Status);
+                }
                 return;
             }
             Assert.Equal(failedReply ? OrchestrationInstanceStatus.DeadLettered : OrchestrationInstanceStatus.Completed, observed?.Status);

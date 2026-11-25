@@ -4,16 +4,12 @@ using System.Text.Json.Serialization;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
+namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 
-/// <summary>
-/// Reads a SQL Server callback graph as one compact row. Child collections are
-/// aggregated inside SQL so the instance snapshot and callback ownership chain are
-/// transferred exactly once, without adding sequential database round trips.
-/// </summary>
 internal static class SqlServerCallbackGraphReader
 {
     private const string Sql = """
@@ -48,20 +44,19 @@ internal static class SqlServerCallbackGraphReader
     private static readonly JsonSerializerOptions SerializerOptions =
         CallbackGraphJsonMaterializer.CreateSerializerOptions(new SqlServerIdJsonConverter());
 
-    public static async Task<TaskDispatchCallbackExecutionState> TryReadAsync(
+    public static async Task<TaskDispatchCallbackExecutionState?> TryReadAsync(
         RuntimeDbContext dbContext,
         Id dispatchId,
         CancellationToken cancellationToken)
     {
-        string instanceJson = null;
-        string callbackTaskJson = null;
-        string callbackStageJson = null;
-        string stagesJson = null;
-        string stageTasksJson = null;
+        string? instanceJson = null;
+        string? callbackTaskJson = null;
+        string? callbackStageJson = null;
+        string? stagesJson = null;
+        string? stageTasksJson = null;
         var connection = dbContext.Database.GetDbConnection();
         var closeConnection = connection.State != ConnectionState.Open;
-        if (closeConnection)
-            await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        if (closeConnection) await dbContext.Database.OpenConnectionAsync(cancellationToken);
 
         try
         {
@@ -75,24 +70,19 @@ internal static class SqlServerCallbackGraphReader
             parameter.Value = dispatchId.Value.ToByteArray();
             command.Parameters.Add(parameter);
 
-            await using (var reader = await command.ExecuteReaderAsync(
-                             CommandBehavior.SingleRow,
-                             cancellationToken))
-            {
-                if (!await reader.ReadAsync(cancellationToken))
-                    return null;
-
-                instanceJson = reader.GetString(0);
-                callbackTaskJson = reader.GetString(1);
-                callbackStageJson = reader.GetString(2);
-                stagesJson = reader.IsDBNull(3) ? null : reader.GetString(3);
-                stageTasksJson = reader.IsDBNull(4) ? null : reader.GetString(4);
-            }
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SingleRow,
+                cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) return null;
+            instanceJson = reader.GetString(0);
+            callbackTaskJson = reader.GetString(1);
+            callbackStageJson = reader.GetString(2);
+            stagesJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+            stageTasksJson = reader.IsDBNull(4) ? null : reader.GetString(4);
         }
         finally
         {
-            if (closeConnection)
-                await dbContext.Database.CloseConnectionAsync();
+            if (closeConnection) await dbContext.Database.CloseConnectionAsync();
         }
 
         return CallbackGraphJsonMaterializer.Materialize(

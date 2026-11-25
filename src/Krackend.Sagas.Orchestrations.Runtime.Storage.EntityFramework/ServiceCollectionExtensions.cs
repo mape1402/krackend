@@ -42,8 +42,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
         services.TryAddSingleton<RuntimeMutationLeaseScope>();
-        services.TryAddSingleton<RuntimeSqlServerDurableLogFlushCoordinator>();
-        services.TryAddSingleton<RuntimeSqlServerDurableLogFlushInterceptor>();
+        services.TryAddSingleton<RuntimeProviderDurabilityInterceptor>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddOptions<RuntimeHistoryRetentionOptions>().BindConfiguration("Runtime:HistoryRetention");
         services.TryAddScoped<IRuntimeHistoryRetentionProcessor, RuntimeHistoryRetentionProcessor>();
@@ -64,10 +63,9 @@ public static class ServiceCollectionExtensions
             options.PersistStatisticsObservations = storageOptions.PersistStatisticsObservations;
             options.HotStateProjectionInterval = storageOptions.HotStateProjectionInterval;
             options.HotStateProjectionMaxDelay = storageOptions.HotStateProjectionMaxDelay;
+            options.AllowHotStateProjectionDuringForeground = storageOptions.AllowHotStateProjectionDuringForeground;
             options.HotStateProjectionBatchSize = storageOptions.HotStateProjectionBatchSize;
-            options.CoordinateSqlServerDurableLogFlushes = storageOptions.CoordinateSqlServerDurableLogFlushes;
-            options.SqlServerDurableLogFlushWindow = storageOptions.SqlServerDurableLogFlushWindow;
-            options.SqlServerDurableLogFlushConcurrency = storageOptions.SqlServerDurableLogFlushConcurrency;
+            options.ProviderOptimizations = storageOptions.ProviderOptimizations;
             options.PersistDataProtectionKeysToStorage = storageOptions.PersistDataProtectionKeysToStorage;
             options.DataProtectionApplicationName = storageOptions.DataProtectionApplicationName;
             options.ConfigureDataProtection = storageOptions.ConfigureDataProtection;
@@ -83,7 +81,7 @@ public static class ServiceCollectionExtensions
                 storageOptions,
                 provider.GetRequiredService<RuntimeMutationLeaseScope>());
             options.AddInterceptors(
-                provider.GetRequiredService<RuntimeSqlServerDurableLogFlushInterceptor>());
+                provider.GetRequiredService<RuntimeProviderDurabilityInterceptor>());
             options.ReplaceService<IModelCacheKeyFactory, RuntimeEntityFrameworkModelCacheKeyFactory>();
         });
         var dataProtection = services.AddDataProtection();

@@ -45,8 +45,6 @@ var fastLaneFlushInterval = TimeSpan.FromMilliseconds(Math.Clamp(
     builder.Configuration.GetValue("Runtime:Mule:FastLane:FlushIntervalMilliseconds", 100),
     1,
     1_000));
-var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
-
 if (string.IsNullOrWhiteSpace(redisConnectionString))
 {
     builder.Services.AddDistributedMemoryCache();
@@ -83,7 +81,7 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
             sql.MigrationsHistoryTable("__RuntimeStorageMigrationsHistory", "Runtime");
         });
     },
-    storage => storage.ConfigureModel = sqlServerStorageModelCustomizer.Configure);
+    storage => storage.UseKrackendSqlServerRuntime());
 
 builder.Services
     .AddKrackendOrchestrationsRuntime()

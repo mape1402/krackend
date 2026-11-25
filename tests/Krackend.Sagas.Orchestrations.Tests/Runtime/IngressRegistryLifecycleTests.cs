@@ -185,6 +185,7 @@ public sealed class IngressRegistryLifecycleTests
         await registry.StandUpStagedAsync("artifact-1", 7);
 
         await connector.Received(2).ConnectAsync(Arg.Is<IngressConfiguration>(x => x.IsStaged), Arg.Any<CancellationToken>());
+        Assert.False(provider.GetRequiredService<IRuntimeIngressLocalState>().IsApplied("artifact-1", 7));
     }
 
     [Fact]

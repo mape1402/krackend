@@ -502,6 +502,7 @@ public sealed class CompleteCallbackDecisionHandlerTests
         var dispatches = DispatchRepository();
         var transitions = TransitionRepository();
         var timeouts = Substitute.For<ITaskResponseTimeoutScheduler>();
+        timeouts.UsesDurableScheduling.Returns(true);
         instances.GetById(state.Instance.Id, Arg.Any<CancellationToken>()).Returns(state.Instance);
         tasks.GetById(state.Task.Id, Arg.Any<CancellationToken>()).Returns(state.Task);
         stages.GetById(state.Task.StageExecutionId, Arg.Any<CancellationToken>()).Returns(new StageExecution

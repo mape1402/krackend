@@ -339,6 +339,31 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         Id taskExecutionId,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
+        => await ProcessTaskTimeoutAsync(
+            orchestrationInstanceId,
+            taskExecutionId,
+            utcNow,
+            publicationConfirmedByTimer: false,
+            cancellationToken);
+
+    public async Task<TaskResponseTimeoutProcessingResult> ProcessScheduledTaskTimeoutAsync(
+        Id orchestrationInstanceId,
+        Id taskExecutionId,
+        DateTime utcNow,
+        CancellationToken cancellationToken = default)
+        => await ProcessTaskTimeoutAsync(
+            orchestrationInstanceId,
+            taskExecutionId,
+            utcNow,
+            publicationConfirmedByTimer: true,
+            cancellationToken);
+
+    private async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id orchestrationInstanceId,
+        Id taskExecutionId,
+        DateTime utcNow,
+        bool publicationConfirmedByTimer,
+        CancellationToken cancellationToken)
     {
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
 
@@ -360,7 +385,12 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
                 if (task.OrchestrationInstanceId != orchestrationInstanceId)
                     return;
 
-                result = await TryProcessTaskCoreAsync(task, utcNow, null, token);
+                result = await TryProcessTaskCoreAsync(
+                    task,
+                    utcNow,
+                    null,
+                    publicationConfirmedByTimer,
+                    token);
             },
             cancellationToken,
             waitForLease: false);
@@ -405,7 +435,12 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
 
         var acquired = await _coordinator.TryExecuteAsync(
             task.OrchestrationInstanceId,
-            async token => result = await TryProcessTaskCoreAsync(task, utcNow, batch, token),
+            async token => result = await TryProcessTaskCoreAsync(
+                task,
+                utcNow,
+                batch,
+                publicationConfirmedByTimer: false,
+                token),
             cancellationToken,
             waitForLease: false);
 
@@ -416,6 +451,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         TaskExecution waitingTask,
         DateTime utcNow,
         OrchestrationTimeoutBatchContext batch,
+        bool publicationConfirmedByTimer,
         CancellationToken cancellationToken)
     {
         var task = await _taskRepository.GetById(waitingTask.Id, cancellationToken);
@@ -468,7 +504,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var dispatch = attempt.DispatchId.HasValue
             ? await _dispatchRepository.TryGetById(attempt.DispatchId.Value, cancellationToken)
             : null;
-        if (dispatch?.SentOnUtc is null || dispatch.TaskExecutionAttemptId != attempt.Id ||
+        if (dispatch is null ||
+            (!publicationConfirmedByTimer && dispatch.SentOnUtc is null) ||
+            dispatch.TaskExecutionAttemptId != attempt.Id ||
             !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
         {
             return TaskResponseTimeoutProcessingResult.Ignored;

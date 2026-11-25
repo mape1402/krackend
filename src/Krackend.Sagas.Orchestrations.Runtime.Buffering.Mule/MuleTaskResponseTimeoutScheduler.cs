@@ -95,6 +95,32 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         // resolve the same action by this key, so keep the timer durable in Mule and
         // leave functional saga state in its existing transaction.
         await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);
+        NotifyWhenDue(actionId, action.Lane, action.NextAttemptOnUtc ?? DateTimeOffset.UtcNow);
+
+        if (!string.IsNullOrWhiteSpace(request.RecoveryOfActionId))
+        {
+            // Healthy timers are found by their deterministic key and do not add a SQL
+            // write to the hot path. A replacement deliberately has a new generation
+            // suffix, so retain that cold-path action id for later inspection/cancel.
+            await _coordinator.TryExecuteAsync(
+                request.OrchestrationInstanceId,
+                async token =>
+                {
+                    var task = await _tasks.GetById(request.TaskExecutionId, token);
+                    if (task.Status != TaskExecutionStatus.WaitingResponse ||
+                        task.LastAttemptNumber != request.AttemptNumber ||
+                        task.ResponseDeadlineUtc != request.DueOnUtc)
+                    {
+                        return;
+                    }
+
+                    task.TimeoutActionId = actionId.ToString();
+                    task.TimeoutActionLane = action.Lane;
+                    await _tasks.Update(task, token);
+                },
+                cancellationToken,
+                waitForLease: true);
+        }
 
         return new TaskResponseTimeoutScheduleResult(actionId.ToString(), action.Lane);
     }
@@ -162,9 +188,20 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var processor = scope.ServiceProvider.GetRequiredService<IOrchestrationTimeoutProcessor>();
-                var result = processor is IOrchestrationTimeoutBatchProcessor batchProcessor
-                    ? await batchProcessor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, batch, cancellationToken)
-                    : await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
+                var attempt = (await _attempts.GetByTaskExecutionId(task.Id, cancellationToken))
+                    .OrderByDescending(candidate => candidate.AttemptNumber)
+                    .FirstOrDefault(candidate => candidate.Status == TaskExecutionStatus.WaitingResponse);
+                var hasDurableTimer = attempt is not null && task.ResponseDeadlineUtc is { } deadline &&
+                    await FindTimeoutActionIdAsync(task, attempt, deadline, cancellationToken) is not null;
+                var result = hasDurableTimer
+                    ? await processor.ProcessScheduledTaskTimeoutAsync(
+                        task.OrchestrationInstanceId,
+                        task.Id,
+                        DateTime.UtcNow,
+                        cancellationToken)
+                    : processor is IOrchestrationTimeoutBatchProcessor batchProcessor
+                        ? await batchProcessor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, batch, cancellationToken)
+                        : await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
                 if (result.Applied) repaired++;
                 else unresolvedDue++;
             }
@@ -240,8 +277,7 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
                     DueOnUtc = dueOnUtc
                 }, cancellationToken);
                 repaired++;
-                var current = await _tasks.GetById(task.Id, cancellationToken);
-                scheduled = current.Status != TaskExecutionStatus.WaitingResponse || !string.IsNullOrWhiteSpace(current.TimeoutActionId);
+                scheduled = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -266,6 +302,24 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     private static int NextOffset(int offset, int unresolved, int count, int limit)
         => count < limit || unresolved > int.MaxValue - offset ? 0 : offset + unresolved;
 
+    private async Task<global::Mule.Ulid?> FindTimeoutActionIdAsync(
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        DateTime dueOnUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(task.TimeoutActionId) &&
+            global::Mule.Ulid.TryParse(task.TimeoutActionId, out var captured))
+        {
+            return captured;
+        }
+
+        return await _storage.FindByDeduplicationKeyAsync(
+            MuleActionKeys.TaskResponseTimeoutActionKey,
+            BuildDeduplicationKey(task.Id, attempt.Id, attempt.AttemptNumber, dueOnUtc),
+            cancellationToken);
+    }
+
     private async Task CancelPersistedActionAsync(
         global::Mule.Ulid actionId,
         Id taskExecutionId,
@@ -284,6 +338,38 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
             // The state transition has already been persisted. A claimed timeout rechecks state under the saga lease,
             // so a transient Mule failure must not undo valid business work or create a duplicate dispatch.
             _logger.LogWarning(exception, "Could not cancel task response timeout action '{ActionId}' for task '{TaskId}'.", actionId, taskExecutionId);
+        }
+    }
+
+    private void NotifyWhenDue(global::Mule.Ulid actionId, string lane, DateTimeOffset dueOnUtc)
+    {
+        var delay = dueOnUtc - DateTimeOffset.UtcNow;
+        if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+
+        // Immediate dispatch deliberately does not poll Mule's durable table for
+        // future actions. Keep one lightweight local wake-up per durable timer.
+        // Process restart remains safe because Mule reloads scheduled actions.
+        var scopeFactory = _scopeFactory;
+        var logger = _logger;
+        void Schedule() => _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (delay > TimeSpan.Zero) await Task.Delay(delay);
+                using var scope = scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<IMuleCommitNotifier>()
+                    .NotifySavedAsync(actionId, lane, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Could not notify Mule about due response timeout '{ActionId}'.", actionId);
+            }
+        });
+
+        if (ExecutionContext.IsFlowSuppressed()) Schedule();
+        else
+        {
+            using (ExecutionContext.SuppressFlow()) Schedule();
         }
     }
 

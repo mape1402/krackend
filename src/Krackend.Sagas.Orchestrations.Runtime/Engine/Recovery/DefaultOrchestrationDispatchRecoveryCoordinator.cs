@@ -31,6 +31,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
     private readonly IExecutionSandboxProviderRegistry _providerRegistry;
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly ISagaEngine _sagaEngine;
+    private readonly IOrchestrationDurableWorkInspector _workInspector;
 
     public DefaultOrchestrationDispatchRecoveryCoordinator(
         ITaskDispatchRepository dispatchRepository,
@@ -41,7 +42,8 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         IRuntimeStorageUnitOfWork storageUnitOfWork,
         IExecutionSandboxProviderRegistry providerRegistry,
         IOrchestrationInstanceCoordinator coordinator,
-        ISagaEngine sagaEngine)
+        ISagaEngine sagaEngine,
+        IOrchestrationDurableWorkInspector workInspector = null)
     {
         _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
         _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
@@ -52,6 +54,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
+        _workInspector = workInspector;
     }
 
     public async Task<int> RecoverPendingDispatchesAsync(int take, CancellationToken cancellationToken = default)
@@ -72,6 +75,20 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
                 ? null
                 : await _taskRepository.GetById(attempt.TaskExecutionId, cancellationToken);
             if (task is null)
+            {
+                continue;
+            }
+
+            // Prepared direct publication schedules its durable response timer only
+            // after the transport confirms acceptance. That timer is therefore the
+            // publication receipt for the optimized path, which deliberately avoids
+            // a second dispatch-row update. Never republish while it is still live.
+            if (candidate.SentOnUtc is null &&
+                string.Equals(candidate.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) &&
+                task.Status == TaskExecutionStatus.WaitingResponse &&
+                attempt.Status == TaskExecutionStatus.WaitingResponse &&
+                _workInspector is not null &&
+                await _workInspector.InspectTimeoutAsync(task, attempt, cancellationToken) == DurableWorkPresence.Present)
             {
                 continue;
             }

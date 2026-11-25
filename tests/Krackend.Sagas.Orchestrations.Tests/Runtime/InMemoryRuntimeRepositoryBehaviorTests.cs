@@ -317,9 +317,10 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         Assert.Equal(due.Id, byCommand.Id);
         Assert.Equal(due.Id, byAttempt.Id);
         Assert.Null(missing);
-        Assert.Equal("Failed", future.DispatchStatus);
-        Assert.NotNull(future.SentOnUtc);
-        Assert.Equal("broker down", future.FailureReason);
+        var failed = await repository.GetById(future.Id);
+        Assert.Equal("Failed", failed.DispatchStatus);
+        Assert.NotNull(failed.SentOnUtc);
+        Assert.Equal("broker down", failed.FailureReason);
         Assert.Single(scheduled);
         Assert.Equal(queuePending.Id, Assert.Single(pending).Id);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetByCommandId("missing-command"));

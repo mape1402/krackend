@@ -557,6 +557,7 @@ public sealed class DecisionControlRetryTests
         var limitedGroup = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
             "BuildNextTaskDecisions",
             instance,
+            new OrchestrationDecisionState(instance),
             new[] { groupedStage },
             groupedStage,
             stageExecution,
@@ -568,6 +569,7 @@ public sealed class DecisionControlRetryTests
         var missingGroup = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
             "BuildNextTaskDecisions",
             instance,
+            new OrchestrationDecisionState(instance),
             new[] { missingGroupStage },
             missingGroupStage,
             stageExecution,
@@ -579,6 +581,7 @@ public sealed class DecisionControlRetryTests
         var zeroGroup = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
             "BuildNextTaskDecisions",
             instance,
+            new OrchestrationDecisionState(instance),
             new[] { zeroMaxStage },
             zeroMaxStage,
             stageExecution,
@@ -590,6 +593,7 @@ public sealed class DecisionControlRetryTests
         var sequentialWithoutPayload = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
             "BuildNextTaskDecisions",
             instance,
+            new OrchestrationDecisionState(instance),
             new[] { baseStage },
             baseStage,
             stageExecution,
@@ -601,6 +605,7 @@ public sealed class DecisionControlRetryTests
         var sequential = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
             "BuildNextTaskDecisions",
             instance,
+            new OrchestrationDecisionState(instance),
             new[] { baseStage },
             baseStage,
             stageExecution,
@@ -669,7 +674,7 @@ public sealed class DecisionControlRetryTests
         var payload = JsonNode.Parse("""{"order":123,"items":[1,2]}""")!;
 
         var decisions = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
-            "BuildNextTaskDecisions", instance, new[] { stage }, stage, stageExecution, tasks, executions,
+            "BuildNextTaskDecisions", instance, new OrchestrationDecisionState(instance), new[] { stage }, stage, stageExecution, tasks, executions,
             payload, Array.Empty<MetadataDescriptorArtifact>(), artifact.ExecutionPolicy)!;
 
         if (limit == 0)
@@ -862,7 +867,7 @@ public sealed class DecisionControlRetryTests
         };
 
         var decision = InvokeDecisionControlPrivateStatic<CompleteCallbackDecision>(
-            "BuildCompleteCallbackDecision",
+            "CreateCompleteCallbackDecision",
             request,
             instanceId,
             taskExecutionId,

@@ -136,7 +136,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                         registrations.TryRemove(obsolete.ConnectorId, out _);
                     }
                 }
-                _localState.MarkApplied(artifactId, ingressGeneration);
+                // A staged connector is physically ready, but it is not yet the
+                // active local route. Rollout activation refreshes it after the
+                // previous owner has been removed and only that refresh may
+                // satisfy the local readiness barrier.
+                if (!staged)
+                    _localState.MarkApplied(artifactId, ingressGeneration);
             }
             finally { gate.Release(); }
         }

@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.5.2] - 2026-11-24
+
+### Changed
+
+- Package the portable SQL Server runtime physical model so host-owned EF migrations generate the required catalog, deadline, and recovery indexes with their covering columns.
+- Distribute `TaskExecutions` writes across a bucketed clustered index and apply row compression, fill factors, and ordered clustered storage to the hot dispatch tables without requiring In-Memory OLTP.
+- Keep timeout and reconciliation scans out of the foreground hot path while retaining a bounded maximum deferral for recovery work.
+
+### Fixed
+
+- Preserve parallel runtime intake under sustained load without carrying unfinished work into the next scheduled block.
+- Remove startup-time schema mutation and elevated database permissions from the runtime host; database changes are now emitted through host-owned EF migrations and deployment scripts.
+- Pin the SQL Server provider to the patched `System.Security.Cryptography.Pkcs` line so published packages do not resolve the vulnerable transitive version from `Microsoft.Data.SqlClient`.
+
+### Upgrade notes
+
+- Update `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer`, call `UseKrackendSqlServerRuntime()` in both runtime and design-time storage, and generate a host-owned EF migration. The package automatically contributes its indexes and storage structures to the migration model.
+- Generate an idempotent EF script and have a DBA apply it before deploying the runtime. The application identity needs only DML permissions afterward; optional database-wide tuning remains an explicit DBA choice and is not required by the runtime.
+- The row-store model works on SQL Server and Azure SQL Database. `OPTIMIZE_FOR_SEQUENTIAL_KEY` is applied only on SQL Server 2019 or newer; older supported versions skip that optional setting.
+
+------
+
 ## [v6.5.1] - 2026-11-23
 
 ### Changed

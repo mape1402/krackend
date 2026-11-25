@@ -44,7 +44,7 @@ public sealed class OrchestrationDispatchRecoveryCoordinatorTests
         var handled = await fixture.Coordinator.RecoverPendingDispatchesAsync(10);
 
         Assert.Equal(1, handled);
-        Assert.Equal("Enqueued", state.Dispatch.DispatchStatus);
+        Assert.Equal("WaitingResponse", state.Dispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.Running, state.Task.Status);
         Assert.Equal(TaskExecutionStatus.Running, state.Attempt.Status);
         Assert.Single(fixture.Provider.RecoveryRequests);

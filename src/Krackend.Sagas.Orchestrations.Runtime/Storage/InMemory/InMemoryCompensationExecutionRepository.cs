@@ -35,7 +35,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(_store.Compensations.Values
-                .Where(x => x.Status == "Pending")
+                .Where(x => x.Status is "Pending" or "Dispatching")
                 .ToArray());
     }
 }

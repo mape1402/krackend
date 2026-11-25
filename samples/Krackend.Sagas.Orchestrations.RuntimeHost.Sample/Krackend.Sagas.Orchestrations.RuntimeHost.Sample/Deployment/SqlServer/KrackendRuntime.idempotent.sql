@@ -1,12 +1,4 @@
-SET ANSI_NULLS ON;
-SET ANSI_PADDING ON;
-SET ANSI_WARNINGS ON;
-SET ARITHABORT ON;
-SET CONCAT_NULL_YIELDS_NULL ON;
-SET QUOTED_IDENTIFIER ON;
-SET NUMERIC_ROUNDABORT OFF;
-GO
-IF OBJECT_ID(N'[Runtime].[__RuntimeStorageMigrationsHistory]') IS NULL
+﻿IF OBJECT_ID(N'[Runtime].[__RuntimeStorageMigrationsHistory]') IS NULL
 BEGIN
     IF SCHEMA_ID(N'Runtime') IS NULL EXEC(N'CREATE SCHEMA [Runtime];');
     CREATE TABLE [Runtime].[__RuntimeStorageMigrationsHistory] (
@@ -2823,6 +2815,355 @@ IF NOT EXISTS (
 BEGIN
     INSERT INTO [Runtime].[__RuntimeStorageMigrationsHistory] ([MigrationId], [ProductVersion])
     VALUES (N'20261123082716_AlignRuntimeConcurrencyModel', N'10.0.0');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskExecutions] DROP CONSTRAINT [PK_TaskExecutions];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id] ON [Runtime].[TaskExecutions];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id] ON [Runtime].[TaskExecutions];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskExecutionAttempts] DROP CONSTRAINT [PK_TaskExecutionAttempts];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [CIX_TaskExecutionAttempts_StorageSequence] ON [Runtime].[TaskExecutionAttempts];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskExecutionAttempts_DispatchId] ON [Runtime].[TaskExecutionAttempts];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskExecutionAttempts_TaskExecutionId_AttemptNumber] ON [Runtime].[TaskExecutionAttempts];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskDispatches] DROP CONSTRAINT [PK_TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [CIX_TaskDispatches_StorageSequence] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskDispatches_CallbackPending_CallbackAcceptedOnUtc] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskDispatches_CommandId] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskDispatches_PhysicalCancellationPending] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_TaskDispatches_TaskExecutionAttemptId] ON [Runtime].[TaskDispatches];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_SagaStatisticsObservations_Pending_InstanceId_Revision] ON [Runtime].[SagaStatisticsObservations];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_OrchestrationInstances_Running_ExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    DROP INDEX [IX_OrchestrationInstances_Running_StartedOnUtc_Id] ON [Runtime].[OrchestrationInstances];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'ALTER TABLE [Runtime].[TaskExecutions] ADD [StorageBucket] AS CONVERT(tinyint, CONVERT(int, SUBSTRING([OrchestrationInstanceId], 16, 1)) & 63) PERSISTED');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskExecutions] ADD CONSTRAINT [PK_TaskExecutions] PRIMARY KEY NONCLUSTERED ([Id]) WITH (FILLFACTOR = 95);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskExecutionAttempts] ADD CONSTRAINT [PK_TaskExecutionAttempts] PRIMARY KEY NONCLUSTERED ([Id]) WITH (FILLFACTOR = 95);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    ALTER TABLE [Runtime].[TaskDispatches] ADD CONSTRAINT [PK_TaskDispatches] PRIMARY KEY NONCLUSTERED ([Id]) WITH (FILLFACTOR = 95);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE CLUSTERED INDEX [CIX_TaskExecutions_StorageBucket_OrchestrationInstanceId_Id] ON [Runtime].[TaskExecutions] ([StorageBucket], [OrchestrationInstanceId], [Id]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id] ON [Runtime].[TaskExecutions] ([WaitingSinceUtc], [Id]) INCLUDE ([CorrelationId]) WHERE [Status] = ''WaitingResponse'' AND [ResponseDeadlineUtc] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id] ON [Runtime].[TaskExecutions] ([ResponseDeadlineUtc], [Id]) INCLUDE ([CorrelationId]) WHERE [Status] = ''WaitingResponse'' AND [ResponseDeadlineUtc] IS NOT NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE CLUSTERED INDEX [CIX_TaskExecutionAttempts_StorageSequence] ON [Runtime].[TaskExecutionAttempts] ([StorageSequence]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE INDEX [IX_TaskExecutionAttempts_DispatchId] ON [Runtime].[TaskExecutionAttempts] ([DispatchId]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TaskExecutionAttempts_TaskExecutionId_AttemptNumber] ON [Runtime].[TaskExecutionAttempts] ([TaskExecutionId], [AttemptNumber]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE CLUSTERED INDEX [CIX_TaskDispatches_StorageSequence] ON [Runtime].[TaskDispatches] ([StorageSequence]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_TaskDispatches_CallbackPending_CallbackAcceptedOnUtc] ON [Runtime].[TaskDispatches] ([CallbackPending], [CallbackAcceptedOnUtc]) WHERE [CallbackPending] = 1 WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW)');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE INDEX [IX_TaskDispatches_CommandId] ON [Runtime].[TaskDispatches] ([CommandId]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_TaskDispatches_PhysicalCancellationPending] ON [Runtime].[TaskDispatches] ([PhysicalCancellationPending]) WHERE [PhysicalCancellationPending] = 1 WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW)');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc] ON [Runtime].[TaskDispatches] ([ScheduledOnUtc], [Id]) WHERE [DispatchStatus] = ''QueuePending'' WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW)');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TaskDispatches_TaskExecutionAttemptId] ON [Runtime].[TaskDispatches] ([TaskExecutionAttemptId]) WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_SagaStatisticsObservations_InstanceId_Revision] ON [Runtime].[SagaStatisticsObservations] ([InstanceId], [Revision]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_SagaStatisticsObservations_Pending_InstanceId_Revision] ON [Runtime].[SagaStatisticsObservations] ([InstanceId], [Revision]) WHERE [Processed] = 0');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([IdleExpiresOnUtc], [Id]) INCLUDE ([CorrelationId]) WHERE [Status] = ''Idle'' AND [IdleExpiresOnUtc] IS NOT NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OrchestrationInstances_Running_ExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([ExpiresOnUtc], [Id]) INCLUDE ([CorrelationId]) WHERE [Status] = ''Running'' AND [ExpiresOnUtc] IS NOT NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OrchestrationInstances_Running_StartedOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([StartedOnUtc] DESC, [Id] DESC) INCLUDE ([CorrelationId]) WHERE [Status] = ''Running''');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE INDEX [IX_OrchestrationInstances_StartedOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([StartedOnUtc] DESC, [Id] DESC) INCLUDE ([CorrelationId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE INDEX [IX_OrchestrationInstances_Status_ExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([Status], [ExpiresOnUtc], [Id]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    CREATE INDEX [IX_OrchestrationInstances_Status_IdleExpiresOnUtc_Id] ON [Runtime].[OrchestrationInstances] ([Status], [IdleExpiresOnUtc], [Id]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [Runtime].[__RuntimeStorageMigrationsHistory]
+    WHERE [MigrationId] = N'20261125011349_OptimizePortableSqlServerRuntime'
+)
+BEGIN
+    INSERT INTO [Runtime].[__RuntimeStorageMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261125011349_OptimizePortableSqlServerRuntime', N'10.0.0');
 END;
 
 COMMIT;

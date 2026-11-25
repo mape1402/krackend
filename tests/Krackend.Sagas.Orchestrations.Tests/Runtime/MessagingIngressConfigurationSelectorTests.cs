@@ -62,6 +62,21 @@ public sealed class MessagingIngressConfigurationSelectorTests
     }
 
     [Fact]
+    public void SelectMatchingDoesNotRouteToAStagedTrigger()
+    {
+        var selector = CreateSelector();
+        var active = CreateTrigger("artifact-active", "orders.created", "1.0.0", "orders.fulfillment", "1.0.0", DateTime.UtcNow.AddMinutes(-1));
+        var staged = CreateTrigger("artifact-staged", "orders.created", "1.0.0", "orders.fulfillment", "1.0.1", DateTime.UtcNow);
+        staged.IsStaged = true;
+
+        var selected = selector.SelectMatching([active, staged], "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-active", Assert.Single(selected).ArtifactId);
+        active.IsStaged = true;
+        Assert.Empty(selector.SelectMatching([active, staged], "orders.created", "1.0.0"));
+    }
+
+    [Fact]
     public void SelectMatchingPrefersArtifactVersionThatMatchesIncomingMessageVersion()
     {
         var selector = CreateSelector();

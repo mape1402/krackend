@@ -571,10 +571,20 @@ public sealed class RuntimeRealInfrastructureE2ETests
         var newId = new Id(System.Ulid.Parse(deployment.RuntimeArtifactId));
         var newOnlyKey = scope.ServiceProvider.GetRequiredService<Krackend.Sagas.Orchestrations.Runtime.Ingress.IRuntimeIngressConfigurationKeyBuilder>()
             .BuildTriggerKey(newOnlyTrigger);
-        await PollingAssert.EventuallyAsync(() => runtime.QueryAsync(db => db.RuntimeArtifactDeploymentHistory.AsNoTracking()
-                .AnyAsync(x => x.RuntimeOrchestrationArtifactId == oldId && x.ArtifactType == "orchestration-version.rollback-requested" &&
-                    x.RuntimeStatus == RuntimeOrchestrationArtifactStatus.Ready)),
-            ready => ready, "Rollback did not complete", TimeSpan.FromSeconds(60));
+        var rollbackStatus = await PollingAssert.EventuallyAsync(() => runtime.QueryAsync(db =>
+                db.RuntimeArtifactDeploymentHistory.AsNoTracking()
+                .Where(x => x.RuntimeOrchestrationArtifactId == oldId && x.ArtifactType == "orchestration-version.rollback-requested")
+                .OrderByDescending(x => x.AppliedOnUtc)
+                .Select(x => x.RuntimeStatus)
+                .FirstOrDefaultAsync()),
+            status => status is RuntimeOrchestrationArtifactStatus.Ready or RuntimeOrchestrationArtifactStatus.Failed,
+            "Rollback did not reach a terminal status", TimeSpan.FromSeconds(60));
+        if (rollbackStatus != RuntimeOrchestrationArtifactStatus.Ready)
+        {
+            var actions = await runtime.QueryAsync(db => db.Set<DurableAction>().AsNoTracking()
+                .OrderByDescending(x => x.CreatedOnUtc).Take(10).ToArrayAsync());
+            Assert.Fail($"Rollback ended as {rollbackStatus}. Durable actions: {string.Join(" | ", actions.Select(x => $"{x.Key}:{x.Status}:attempts={x.Attempts}:error={x.LastError}"))}");
+        }
         Assert.False(await runtime.QueryAsync(db => db.RuntimeIngressConfigurations.AsNoTracking()
             .Where(x => x.RuntimeOrchestrationArtifactId == newId && x.ConfigurationKey == newOnlyKey)
             .Select(x => x.IsActive).SingleAsync()));
