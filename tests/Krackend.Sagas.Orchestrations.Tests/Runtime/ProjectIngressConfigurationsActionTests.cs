@@ -91,6 +91,41 @@ public sealed class ProjectIngressConfigurationsActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenCommittedRollbackNotificationIsRetried_DoesNotMarkRollbackFailed()
+    {
+        var artifactId = Id.New();
+        var artifact = CreateArtifact(artifactId, ingressGeneration: 8);
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
+        artifact.IsActive = true;
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Active;
+        var repository = CreateRepository(artifact);
+        var notifier = Substitute.For<IRuntimeArtifactReadyNotifier>();
+        var history = Substitute.For<IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactRollbackStatusRepository>();
+        var action = new ProjectIngressConfigurationsAction(
+            repository,
+            Substitute.For<IRuntimeIngressConfigurationProjector>(),
+            new NoopRuntimeStorageUnitOfWork(),
+            notifier,
+            NullLogger<ProjectIngressConfigurationsAction>.Instance,
+            new DefaultMuleTerminalFailureMarker(),
+            history: history);
+        var context = CreateContext(artifactId, ingressGeneration: 7);
+        context.Payload.RollbackTargetTriggerKeys = ["trigger:shared"];
+        context.Payload.RollbackOperationId = "rollback-1";
+
+        await action.ExecuteAsync(context, CancellationToken.None);
+
+        await ((IRuntimeArtifactRollbackStatusRepository)history).DidNotReceiveWithAnyArgs()
+            .TrySetRollbackStatus(default!, default, default);
+        await notifier.Received(1).NotifyReadyAsync(
+            Arg.Is<RuntimeArtifactReadyGossipMessage>(message =>
+                message.ArtifactId == artifactId.ToString() &&
+                message.IngressGeneration == 8 &&
+                message.RefreshToken == "rollback-1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenArtifactIsAlreadyReady_NotifiesWithoutProjectingAgain()
     {
         var artifactId = Id.New();

@@ -228,6 +228,20 @@ internal sealed class MessagingEngineHarness : IDisposable
         where T : notnull
         => Services.GetRequiredService<T>();
 
+    public async Task WaitUntilAsync(
+        Func<Task<bool>> condition,
+        TimeSpan? timeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (!await condition())
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException("The messaging engine did not reach the expected observable state.");
+            await Task.Delay(10);
+        }
+    }
+
     public void SeedDispatchSnapshot(TaskDispatch dispatch)
     {
         // Seed historical or cancelled storage state explicitly. Ordinary repository

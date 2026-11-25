@@ -14,8 +14,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts
 
         public DefaultRuntimeArtifactResolver(
             IRuntimeArtifactRepository repository,
+            IRuntimeArtifactSerializer serializer)
+            : this(repository, serializer, null)
+        {
+        }
+
+        public DefaultRuntimeArtifactResolver(
+            IRuntimeArtifactRepository repository,
             IRuntimeArtifactSerializer serializer,
-            RuntimeArtifactSnapshotCache snapshotCache = null)
+            RuntimeArtifactSnapshotCache snapshotCache)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));

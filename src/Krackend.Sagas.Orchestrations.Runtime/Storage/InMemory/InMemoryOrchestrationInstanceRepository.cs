@@ -16,23 +16,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         public Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
         {
             instance.CaptureLastExecutionCursor();
-            _store.Instances[instance.Id] = instance;
+            lock (GetGate(instance.Id))
+                _store.Instances[instance.Id] = instance;
             return Task.CompletedTask;
         }
 
         public Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
         {
             instance.CaptureLastExecutionCursor();
-            if (_store.Instances.TryGetValue(instance.Id, out var current) && !ReferenceEquals(current, instance))
+            lock (GetGate(instance.Id))
             {
-                lock (current)
+                if (_store.Instances.TryGetValue(instance.Id, out var current) && !ReferenceEquals(current, instance))
                 {
                     instance.ActiveLeaseId = current.ActiveLeaseId;
                     instance.ActiveLeaseExpiresOnUtc = current.ActiveLeaseExpiresOnUtc;
                 }
-            }
 
-            _store.Instances[instance.Id] = instance;
+                _store.Instances[instance.Id] = instance;
+            }
             return Task.CompletedTask;
         }
 
@@ -57,9 +58,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
         {
-            var instance = _store.Instances[instanceId];
-            lock (instance)
+            lock (GetGate(instanceId))
             {
+                var instance = _store.Instances[instanceId];
                 if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) &&
                     !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal) &&
                     instance.ActiveLeaseExpiresOnUtc > nowUtc)
@@ -75,20 +76,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
         {
-            if (_store.Instances.TryGetValue(instanceId, out var instance))
+            lock (GetGate(instanceId))
             {
-                lock (instance)
+                if (_store.Instances.TryGetValue(instanceId, out var instance) &&
+                    instance.ActiveLeaseId == leaseId)
                 {
-                    if (instance.ActiveLeaseId == leaseId)
-                    {
-                        instance.ActiveLeaseId = null;
-                        instance.ActiveLeaseExpiresOnUtc = null;
-                    }
+                    instance.ActiveLeaseId = null;
+                    instance.ActiveLeaseExpiresOnUtc = null;
                 }
             }
 
             return Task.CompletedTask;
         }
+
+        private object GetGate(Id instanceId)
+            => _store.InstanceGates.GetOrAdd(instanceId, static _ => new object());
 
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values

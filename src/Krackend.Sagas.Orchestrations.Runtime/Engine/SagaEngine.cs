@@ -269,7 +269,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 // A dispatch intent is now durable in the activation transaction.
                 // Do not re-query state that cannot advance until the isolated
                 // post-lease delivery has run and produced its callback.
-                if (decisions.Any(static decision => decision is DispatchTaskDecision or RetryDecision) &&
+                if (decisions.Any(static decision =>
+                        decision is DispatchTaskDecision or RetryDecision or CompensateInstanceDecision) &&
                     instanceId.HasValue &&
                     _coordinator is IOrchestrationPostLeaseWork postLeaseWork &&
                     postLeaseWork.HasPendingWork(instanceId.Value))

@@ -29,7 +29,8 @@ public sealed class RuntimeDetailBatchReadTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
-        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlServer(connection));
+        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlServer(connection)
+            .ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
@@ -67,7 +68,8 @@ public sealed class RuntimeDetailBatchReadTests
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
         services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "detail_batch_test"),
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "detail_batch_test")
+                .ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)),
             storage => storage.ConfigureModel = model => model.UseKrackendMongoRuntimeModel());
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -102,7 +104,8 @@ public sealed class RuntimeDetailBatchReadTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
-        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlite(connection).AddInterceptors(counter));
+        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlite(connection).AddInterceptors(counter)
+            .ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)));
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();

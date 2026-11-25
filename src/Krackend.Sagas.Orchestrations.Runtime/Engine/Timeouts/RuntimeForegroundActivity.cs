@@ -10,6 +10,7 @@ internal sealed class RuntimeForegroundActivity
 {
     private int _active;
     private long _lastActivityTimestamp;
+    private readonly AsyncLocal<int> _recoveryBypassDepth = new();
 
     public ActivityLease Enter()
     {
@@ -20,11 +21,25 @@ internal sealed class RuntimeForegroundActivity
 
     public bool ShouldYieldRecovery(TimeSpan quietPeriod)
     {
+        if (_recoveryBypassDepth.Value > 0)
+            return false;
+
         if (Volatile.Read(ref _active) > 0)
             return true;
 
         var lastActivity = Interlocked.Read(ref _lastActivityTimestamp);
         return lastActivity != 0 && Stopwatch.GetElapsedTime(lastActivity) < quietPeriod;
+    }
+
+    /// <summary>
+    /// Allows one bounded maintenance pass after recovery has yielded for too long.
+    /// The scope flows only with that recovery operation and never changes foreground
+    /// concurrency.
+    /// </summary>
+    public IDisposable EnterRecoveryBypass()
+    {
+        _recoveryBypassDepth.Value++;
+        return new Scope(() => _recoveryBypassDepth.Value--);
     }
 
     private void Exit()
@@ -36,5 +51,11 @@ internal sealed class RuntimeForegroundActivity
     internal readonly struct ActivityLease(RuntimeForegroundActivity owner) : IDisposable
     {
         public void Dispose() => owner.Exit();
+    }
+
+    private sealed class Scope(Action release) : IDisposable
+    {
+        private Action _release = release;
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 }

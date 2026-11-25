@@ -15,8 +15,10 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -94,10 +96,10 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
             })
             .ConfigureServices((context, services) =>
             {
-                services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-                {
-                    options.UseSqlServer(connectionString);
-                });
+                services.AddOrchestratorRuntimeStorageEntityFramework(
+                    options => options.UseSqlServer(connectionString)
+                        .ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning)),
+                    storage => storage.UseKrackendSqlServerRuntime());
 
                 var runtime = services
                     .AddKrackendOrchestrationsRuntime()

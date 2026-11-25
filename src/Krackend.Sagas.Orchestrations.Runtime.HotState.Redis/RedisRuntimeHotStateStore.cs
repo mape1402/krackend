@@ -2,6 +2,8 @@
 
 namespace Krackend.Sagas.Orchestrations.Runtime.HotState.Redis;
 
+using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -10,87 +12,123 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using StackExchange.Redis;
 
-internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncDisposable
+internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore,
+    IRuntimeHotStateInstanceGraphStore, IRuntimeHotStateLeaseGraphStore,
+    IRuntimeHotStateOptimisticGraphStore,
+    IRuntimeHotStateDispatchReceiptStore, IAsyncDisposable
 {
+    private const char RecordSeparator = (char)30;
+    private const string CompressedPayloadPrefix = "~br~";
+    private const string GraphVersionField = "#version";
+    private const int MaximumLocalGraphs = 50_000;
     private const string CommitScript = """
-        local batch = cjson.decode(ARGV[1])
-        for _, mutation in ipairs(batch) do
-            if type(mutation.entityType) ~= 'string' or
-               type(mutation.entityId) ~= 'string' or
-               type(mutation.payload) ~= 'string' or
-               (type(mutation.instanceId) ~= 'string' and type(mutation.instanceId) ~= 'userdata') or
-               (type(mutation.indexes) ~= 'table' and type(mutation.indexes) ~= 'userdata') then
-                return redis.error_reply('invalid runtime hot-state mutation')
+        local leaseId = ARGV[5]
+        local expectedVersion = ARGV[6]
+        if expectedVersion ~= '' then
+            local currentVersion = redis.call('HGET', KEYS[7], '#version') or '0'
+            if currentVersion ~= expectedVersion then
+                return redis.error_reply('runtime hot-state graph version conflict')
             end
-            if mutation.entityType == ARGV[3] and type(mutation.indexes) == 'table' and
-               type(mutation.indexes.start) == 'string' and mutation.indexes.start ~= '' then
-                local digest = redis.sha1hex(mutation.entityType .. '|start|' .. mutation.indexes.start)
-                local owner = redis.call('GET', ARGV[2] .. ':lookup:' .. digest)
-                if owner and owner ~= mutation.entityId then
-                    return redis.error_reply('duplicate runtime start idempotency key')
+        elseif leaseId ~= '' and redis.call('GET', KEYS[5]) ~= leaseId then
+            return redis.error_reply('runtime hot-state mutation lease was lost')
+        end
+        local mutationCount = tonumber(ARGV[4])
+        local offset = 7
+        for mutationIndex = 1, mutationCount do
+            local entityType = ARGV[offset]
+            local entityId = ARGV[offset + 1]
+            local indexCount = tonumber(ARGV[offset + 5])
+            offset = offset + 6
+            for index = 1, indexCount do
+                local name = ARGV[offset]
+                local value = ARGV[offset + 1]
+                local digest = ARGV[offset + 2]
+                if entityType == ARGV[3] and name == 'start' and value ~= '' then
+                    local owner = redis.call('HGET', KEYS[6], digest)
+                    if not owner then
+                        owner = redis.call('GET', ARGV[2] .. ':lookup:' .. digest)
+                    end
+                    if owner and owner ~= entityId then
+                        return redis.error_reply('duplicate runtime start idempotency key')
+                    end
                 end
+                offset = offset + 3
             end
         end
         local sequence = redis.call('INCR', KEYS[1])
         redis.call('HSET', KEYS[2], tostring(sequence), ARGV[1])
         redis.call('ZADD', KEYS[3], sequence, tostring(sequence))
-        for _, mutation in ipairs(batch) do
-            local entityKey = ARGV[2] .. ':entity:' .. mutation.entityType .. ':' .. mutation.entityId
-            local current = tonumber(redis.call('HGET', entityKey, 'sequence') or '-1')
-            if sequence >= current then
-                redis.call('HSET', entityKey,
-                    'entityType', mutation.entityType,
-                    'entityId', mutation.entityId,
-                    'instanceId', type(mutation.instanceId) == 'string' and mutation.instanceId or '',
-                    'operation', mutation.operation,
-                    'payload', mutation.payload,
-                    'sequence', sequence)
-                if type(mutation.instanceId) == 'string' and mutation.instanceId ~= '' then
-                    redis.call('SADD', ARGV[2] .. ':owner:' .. mutation.instanceId .. ':' .. mutation.entityType, mutation.entityId)
-                    redis.call('SADD', ARGV[2] .. ':owner-types:' .. mutation.instanceId, mutation.entityType)
-                end
-                if type(mutation.indexes) == 'table' then
-                    for name, value in pairs(mutation.indexes) do
-                        local digest = redis.sha1hex(mutation.entityType .. '|' .. name .. '|' .. value)
-                        local lookupKey = ARGV[2] .. ':lookup:' .. digest
-                        redis.call('SET', lookupKey, mutation.entityId)
-                        if type(mutation.instanceId) == 'string' and mutation.instanceId ~= '' then
-                            redis.call('SADD', ARGV[2] .. ':owner-lookups:' .. mutation.instanceId, lookupKey)
-                        end
-                    end
-                end
+        local separator = string.char(30)
+        local graphValues = {}
+        local lookupValues = {}
+        offset = 7
+        for mutationIndex = 1, mutationCount do
+            local entityType = ARGV[offset]
+            local entityId = ARGV[offset + 1]
+            local instanceId = ARGV[offset + 2]
+            local operation = ARGV[offset + 3]
+            local payload = ARGV[offset + 4]
+            local indexCount = tonumber(ARGV[offset + 5])
+            offset = offset + 6
+            local entityKey = ARGV[2] .. ':entity:' .. entityType .. ':' .. entityId
+            local record =
+                entityType .. separator .. entityId .. separator .. instanceId .. separator ..
+                operation .. separator .. tostring(sequence) .. separator .. payload
+            redis.call('SET', entityKey, record)
+            if instanceId ~= '' then
+                table.insert(graphValues, entityType .. separator .. entityId)
+                table.insert(graphValues, record)
             end
-            if mutation.entityType == ARGV[3] then
-                redis.call('ZADD', KEYS[4], sequence, mutation.entityId)
+            for index = 1, indexCount do
+                local digest = ARGV[offset + 2]
+                table.insert(lookupValues, digest)
+                table.insert(lookupValues, entityId)
+                if instanceId ~= '' then
+                    table.insert(graphValues, '@' .. digest)
+                    table.insert(graphValues, '')
+                end
+                offset = offset + 3
             end
+            if entityType == ARGV[3] then
+                redis.call('ZADD', KEYS[4], sequence, entityId)
+            end
+        end
+        if #lookupValues > 0 then
+            redis.call('HSET', KEYS[6], unpack(lookupValues))
+        end
+        if #graphValues > 0 then
+            table.insert(graphValues, '#version')
+            table.insert(graphValues, tostring(sequence))
+            redis.call('HSET', KEYS[7], unpack(graphValues))
+        end
+        if leaseId ~= '' then
+            redis.call('DEL', KEYS[5])
         end
         return sequence
         """;
 
     private const string CacheScript = """
         local mutation = cjson.decode(ARGV[1])
-        local sequence = tonumber(redis.call('GET', KEYS[1]) or '0')
         local entityKey = ARGV[2] .. ':entity:' .. mutation.entityType .. ':' .. mutation.entityId
-        local current = tonumber(redis.call('HGET', entityKey, 'sequence') or '-1')
-        if current > sequence then return 0 end
-        redis.call('HSET', entityKey,
-            'entityType', mutation.entityType,
-            'entityId', mutation.entityId,
-            'instanceId', type(mutation.instanceId) == 'string' and mutation.instanceId or '',
-            'operation', mutation.operation,
-            'payload', mutation.payload,
-            'sequence', sequence)
+        if redis.call('EXISTS', entityKey) == 1 then return 0 end
+        local sequence = tonumber(redis.call('GET', KEYS[1]) or '0')
+        local instanceId = type(mutation.instanceId) == 'string' and mutation.instanceId or ''
+        local separator = string.char(30)
+        local record =
+            mutation.entityType .. separator .. mutation.entityId .. separator .. instanceId .. separator ..
+            tostring(mutation.operation) .. separator .. tostring(sequence) .. separator .. mutation.payload
+        redis.call('SET', entityKey, record)
         if type(mutation.instanceId) == 'string' and mutation.instanceId ~= '' then
-            redis.call('SADD', ARGV[2] .. ':owner:' .. mutation.instanceId .. ':' .. mutation.entityType, mutation.entityId)
-            redis.call('SADD', ARGV[2] .. ':owner-types:' .. mutation.instanceId, mutation.entityType)
+            redis.call('HSET', ARGV[2] .. ':graph:' .. mutation.instanceId,
+                mutation.entityType .. separator .. mutation.entityId, record,
+                '#version', tostring(sequence))
         end
         if type(mutation.indexes) == 'table' then
             for name, value in pairs(mutation.indexes) do
                 local digest = redis.sha1hex(mutation.entityType .. '|' .. name .. '|' .. value)
-                local lookupKey = ARGV[2] .. ':lookup:' .. digest
-                redis.call('SET', lookupKey, mutation.entityId)
+                redis.call('HSET', KEYS[3], digest, mutation.entityId)
                 if type(mutation.instanceId) == 'string' and mutation.instanceId ~= '' then
-                    redis.call('SADD', ARGV[2] .. ':owner-lookups:' .. mutation.instanceId, lookupKey)
+                    redis.call('HSET', ARGV[2] .. ':graph:' .. mutation.instanceId, '@' .. digest, '')
                 end
             end
         end
@@ -112,6 +150,18 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
             return 1
         end
         return 0
+        """;
+
+    private const string AcquireLeaseGraphScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current and current ~= ARGV[1] then return {0} end
+        redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+        local version = redis.call('HGET', KEYS[2], '#version') or '0'
+        if version == ARGV[3] then return {1, version} end
+        local graph = redis.call('HVALS', KEYS[2])
+        local result = {1, version}
+        for _, value in ipairs(graph) do table.insert(result, value) end
+        return result
         """;
 
     private const string ReleaseLeaseScript = """
@@ -149,7 +199,24 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         for _, instanceId in ipairs(candidates) do
             if not redis.call('ZSCORE', KEYS[2], instanceId) then
                 local instanceKey = ARGV[1] .. ':entity:' .. ARGV[3] .. ':' .. instanceId
-                local payload = redis.call('HGET', instanceKey, 'payload')
+                local payload = false
+                local keyType = redis.call('TYPE', instanceKey).ok
+                if keyType == 'string' then
+                    local record = redis.call('GET', instanceKey)
+                    local separator = string.char(30)
+                    local start = 1
+                    for part = 1, 5 do
+                        local position = string.find(record, separator, start, true)
+                        if not position then
+                            start = nil
+                            break
+                        end
+                        start = position + 1
+                    end
+                    if start then payload = string.sub(record, start) end
+                elseif keyType == 'hash' then
+                    payload = redis.call('HGET', instanceKey, 'payload')
+                end
                 local terminal = false
                 if payload then
                     local instance = cjson.decode(payload)
@@ -158,15 +225,35 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
                         status == 9 or status == 10 or status == 11
                 end
                 if terminal then
-                    local ownerTypesKey = ARGV[1] .. ':owner-types:' .. instanceId
-                    local entityTypes = redis.call('SMEMBERS', ownerTypesKey)
-                    for _, entityType in ipairs(entityTypes) do
-                        local ownerKey = ARGV[1] .. ':owner:' .. instanceId .. ':' .. entityType
-                        local entityIds = redis.call('SMEMBERS', ownerKey)
-                        for _, entityId in ipairs(entityIds) do
-                            redis.call('UNLINK', ARGV[1] .. ':entity:' .. entityType .. ':' .. entityId)
+                    local graphKey = ARGV[1] .. ':graph:' .. instanceId
+                    if redis.call('TYPE', graphKey).ok == 'hash' then
+                        local separator = string.char(30)
+                        local graphFields = redis.call('HKEYS', graphKey)
+                        for _, field in ipairs(graphFields) do
+                            if string.sub(field, 1, 1) == '@' then
+                                redis.call('HDEL', KEYS[3], string.sub(field, 2))
+                            else
+                                local position = string.find(field, separator, 1, true)
+                                if position then
+                                local entityType = string.sub(field, 1, position - 1)
+                                local entityId = string.sub(field, position + 1)
+                                redis.call('UNLINK', ARGV[1] .. ':entity:' .. entityType .. ':' .. entityId)
+                                end
+                            end
                         end
-                        redis.call('UNLINK', ownerKey)
+                        redis.call('UNLINK', graphKey)
+                    else
+                        local ownerTypesKey = ARGV[1] .. ':owner-types:' .. instanceId
+                        local entityTypes = redis.call('SMEMBERS', ownerTypesKey)
+                        for _, entityType in ipairs(entityTypes) do
+                            local ownerKey = ARGV[1] .. ':owner:' .. instanceId .. ':' .. entityType
+                            local entityIds = redis.call('SMEMBERS', ownerKey)
+                            for _, entityId in ipairs(entityIds) do
+                                redis.call('UNLINK', ARGV[1] .. ':entity:' .. entityType .. ':' .. entityId)
+                            end
+                            redis.call('UNLINK', ownerKey)
+                        end
+                        redis.call('UNLINK', ownerTypesKey)
                     end
                     local ownerLookupsKey = ARGV[1] .. ':owner-lookups:' .. instanceId
                     local lookupKeys = redis.call('SMEMBERS', ownerLookupsKey)
@@ -174,7 +261,6 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
                         redis.call('UNLINK', lookupKey)
                     end
                     redis.call('UNLINK', ownerLookupsKey)
-                    redis.call('UNLINK', ownerTypesKey)
                     removed = removed + 1
                 end
                 redis.call('ZREM', KEYS[1], instanceId)
@@ -188,6 +274,8 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
     private readonly RuntimeHotStateRedisOptions _options;
     private readonly IServiceProvider _services;
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
+    private readonly ConcurrentDictionary<Id, LocalGraph> _localGraphs = new();
+    private long _localGraphGeneration;
     private IConnectionMultiplexer? _connection;
     private bool _ownsConnection;
 
@@ -200,17 +288,75 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
     public bool IsEnabled => true;
 
     public async Task<long> CommitAsync(IReadOnlyCollection<RuntimeHotStateMutation> mutations, CancellationToken cancellationToken = default)
+        => await CommitCoreAsync(mutations, null, null, null, cancellationToken);
+
+    public async Task<long> CommitAndReleaseAsync(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        Id instanceId,
+        string leaseId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(leaseId))
+            throw new ArgumentException("A non-empty mutation lease id is required.", nameof(leaseId));
+        return await CommitCoreAsync(mutations, instanceId, leaseId, null, cancellationToken);
+    }
+
+    public async Task<long> CommitFencedAsync(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        Id instanceId,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+        => await CommitCoreAsync(mutations, instanceId, null, expectedVersion, cancellationToken);
+
+    private async Task<long> CommitCoreAsync(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        Id? instanceId,
+        string? leaseId,
+        long? expectedVersion,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutations);
         if (mutations.Count == 0) return await ReadWatermark(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        var ownerId = instanceId?.ToString() ?? mutations
+            .Select(mutation => mutation.InstanceId)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (string.IsNullOrWhiteSpace(ownerId))
+            throw new InvalidOperationException("A hot-state mutation batch must belong to one orchestration instance.");
+        if (mutations.Any(mutation => !string.IsNullOrWhiteSpace(mutation.InstanceId) &&
+            !string.Equals(mutation.InstanceId, ownerId, StringComparison.Ordinal)))
+            throw new InvalidOperationException("A hot-state mutation batch cannot span orchestration instances.");
+        var ownerInstanceId = instanceId ?? new Id(Ulid.Parse(ownerId));
+        var effectiveMutations = mutations.Any(mutation => string.IsNullOrWhiteSpace(mutation.InstanceId))
+            ? mutations.Select(mutation => string.IsNullOrWhiteSpace(mutation.InstanceId)
+                ? mutation with { InstanceId = ownerId }
+                : mutation).ToArray()
+            : mutations;
         var database = await GetDatabase(cancellationToken);
-        var payload = JsonSerializer.Serialize(mutations, JsonOptions);
-        var result = await database.ScriptEvaluateAsync(CommitScript,
-            [SequenceKey, JournalKey, PendingKey, PendingInstancesKey],
-            [payload, Root, InstanceEntityType]);
+        var payload = JsonSerializer.Serialize(
+            effectiveMutations.Select(mutation => new RuntimeHotJournalReference(
+                mutation.EntityType,
+                mutation.EntityId)).ToArray(),
+            JsonOptions);
+        var values = BuildCommitValues(effectiveMutations, payload, leaseId, expectedVersion);
+        RedisResult result;
+        try
+        {
+            result = await database.ScriptEvaluateAsync(CommitScript,
+                [SequenceKey, JournalKey, PendingKey, PendingInstancesKey,
+                    LeaseKey(ownerInstanceId), LookupsKey, GraphKey(ownerInstanceId)],
+                values);
+        }
+        catch (RedisServerException exception) when (
+            exception.Message.Contains("graph version conflict", StringComparison.Ordinal))
+        {
+            _localGraphs.TryRemove(ownerInstanceId, out _);
+            throw;
+        }
         cancellationToken.ThrowIfCancellationRequested();
-        return (long)result;
+        var sequence = (long)result;
+        UpdateLocalGraphs(effectiveMutations, sequence);
+        return sequence;
     }
 
     public async Task CacheAsync(RuntimeHotStateMutation mutation, CancellationToken cancellationToken = default)
@@ -218,7 +364,7 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         ArgumentNullException.ThrowIfNull(mutation);
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
-        await database.ScriptEvaluateAsync(CacheScript, [WatermarkKey, ProjectedTerminalKey],
+        await database.ScriptEvaluateAsync(CacheScript, [WatermarkKey, ProjectedTerminalKey, LookupsKey],
             [JsonSerializer.Serialize(mutation, JsonOptions), Root, InstanceEntityType]);
         cancellationToken.ThrowIfCancellationRequested();
     }
@@ -228,21 +374,155 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         if (string.IsNullOrWhiteSpace(entityType) || string.IsNullOrWhiteSpace(entityId)) return null;
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
-        var values = await database.HashGetAsync(EntityKey(entityType, entityId),
-            ["entityType", "entityId", "instanceId", "operation", "payload", "sequence"]);
+        RedisValue value;
+        try
+        {
+            value = await database.StringGetAsync(EntityKey(entityType, entityId));
+        }
+        catch (RedisServerException exception) when (exception.Message.Contains("WRONGTYPE", StringComparison.Ordinal))
+        {
+            return await TryReadLegacyHashAsync(database, entityType, entityId, cancellationToken);
+        }
         cancellationToken.ThrowIfCancellationRequested();
-        return Materialize(values);
+        return Materialize(value);
     }
 
     public async Task<IReadOnlyCollection<RuntimeHotStateRecord>> ReadByInstanceAsync(string entityType, Id instanceId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
+        var graphValues = await database.HashValuesAsync(GraphKey(instanceId));
+        if (graphValues.Length > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return graphValues.Select(Materialize)
+                .Where(record => record is not null &&
+                    string.Equals(record.EntityType, entityType, StringComparison.Ordinal))
+                .Cast<RuntimeHotStateRecord>()
+                .ToArray();
+        }
+
         var ids = await database.SetMembersAsync(OwnerKey(instanceId, entityType));
         if (ids.Length == 0) return [];
-        var tasks = ids.Select(id => TryReadAsync(entityType, id.ToString(), cancellationToken)).ToArray();
-        var records = await Task.WhenAll(tasks);
-        return records.Where(record => record is not null).Cast<RuntimeHotStateRecord>().ToArray();
+        return await ReadManyAsync(database, entityType, ids, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<RuntimeHotStateRecord>> ReadInstanceGraphAsync(
+        Id instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = await GetDatabase(cancellationToken);
+        var graphValues = await database.HashValuesAsync(GraphKey(instanceId));
+        cancellationToken.ThrowIfCancellationRequested();
+        if (graphValues.Length > 0)
+        {
+            return graphValues.Select(Materialize)
+                .Where(record => record is not null)
+                .Cast<RuntimeHotStateRecord>()
+                .ToArray();
+        }
+
+        // Instances materialized by an earlier package version retain their owner sets.
+        // Keep that migration path out of the new hot path while allowing a rolling upgrade.
+        var entityTypes = await database.SetMembersAsync(OwnerTypesKey(instanceId));
+        if (entityTypes.Length == 0) return [];
+        var reads = entityTypes.Select(type =>
+            ReadByInstanceAsync(type.ToString(), instanceId, cancellationToken));
+        var records = await Task.WhenAll(reads);
+        return records.SelectMany(items => items).ToArray();
+    }
+
+    public async Task<RuntimeHotStateLeaseGraph?> TryAcquireLeaseWithGraphAsync(
+        Id instanceId,
+        string leaseId,
+        TimeSpan duration,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = await GetDatabase(cancellationToken);
+        var cached = _localGraphs.GetValueOrDefault(instanceId);
+        var result = await database.ScriptEvaluateAsync(
+            AcquireLeaseGraphScript,
+            [LeaseKey(instanceId), GraphKey(instanceId)],
+            [
+                leaseId,
+                Math.Max(1L, (long)duration.TotalMilliseconds),
+                cached?.Version ?? -1L
+            ]);
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = (RedisResult[]?)result;
+        if (values is null || values.Length == 0 || (long)values[0] == 0) return null;
+
+        var version = long.TryParse(values[1].ToString(), out var parsedVersion)
+            ? parsedVersion
+            : 0L;
+        if (values.Length == 2 && cached is not null && cached.Version == version)
+            return new RuntimeHotStateLeaseGraph(version, cached.Records);
+
+        var records = values.Skip(2)
+            .Select(value => (RedisValue)value.ToString())
+            .Select(Materialize)
+            .Where(record => record is not null)
+            .Cast<RuntimeHotStateRecord>()
+            .ToArray();
+        StoreLocalGraph(instanceId, version, records);
+        return new RuntimeHotStateLeaseGraph(version, records);
+    }
+
+    public async Task<RuntimeHotStateLeaseGraph> ReadGraphFenceAsync(
+        Id instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var cached = _localGraphs.GetValueOrDefault(instanceId);
+        if (cached is not null)
+            return new RuntimeHotStateLeaseGraph(cached.Version, cached.Records, true);
+
+        var database = await GetDatabase(cancellationToken);
+        var entries = await database.HashGetAllAsync(GraphKey(instanceId));
+        cancellationToken.ThrowIfCancellationRequested();
+        var versionValue = entries.FirstOrDefault(entry => entry.Name == GraphVersionField).Value;
+        var version = long.TryParse(versionValue.ToString(), out var parsedVersion)
+            ? parsedVersion
+            : 0L;
+        var records = entries
+            .Where(entry => entry.Name != GraphVersionField &&
+                !entry.Name.ToString().StartsWith('@'))
+            .Select(entry => Materialize(entry.Value))
+            .Where(record => record is not null)
+            .Cast<RuntimeHotStateRecord>()
+            .ToArray();
+        StoreLocalGraph(instanceId, version, records);
+        return new RuntimeHotStateLeaseGraph(version, records, true);
+    }
+
+    public async Task RecordDispatchPublicationAsync(
+        Id dispatchId,
+        DateTime publishedOnUtc,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = await GetDatabase(cancellationToken);
+        await database.StringSetAsync(
+            DispatchReceiptKey(dispatchId),
+            publishedOnUtc.ToUniversalTime().Ticks,
+            TimeSpan.FromDays(7),
+            When.NotExists);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    public async Task<DateTime?> TryReadDispatchPublicationAsync(
+        Id dispatchId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = await GetDatabase(cancellationToken);
+        var value = await database.StringGetAsync(DispatchReceiptKey(dispatchId));
+        cancellationToken.ThrowIfCancellationRequested();
+        return value.TryParse(out long ticks)
+            ? new DateTime(ticks, DateTimeKind.Utc)
+            : null;
     }
 
     public async Task<RuntimeHotStateRecord?> TryReadByIndexAsync(string entityType, string indexName, string indexValue, CancellationToken cancellationToken = default)
@@ -250,7 +530,10 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         if (string.IsNullOrWhiteSpace(indexValue)) return null;
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
-        var id = await database.StringGetAsync(LookupKey(entityType, indexName, indexValue));
+        var digest = BuildLookupDigest(entityType, indexName, indexValue);
+        var id = await database.HashGetAsync(LookupsKey, digest);
+        if (id.IsNullOrEmpty)
+            id = await database.StringGetAsync(LookupKey(digest));
         return id.IsNullOrEmpty ? null : await TryReadAsync(entityType, id.ToString(), cancellationToken);
     }
 
@@ -260,15 +543,21 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         var database = await GetDatabase(cancellationToken);
         var ids = await database.SortedSetRangeByRankAsync(PendingInstancesKey, 0, Math.Max(0, take - 1), Order.Descending);
         if (ids.Length == 0) return [];
-        var records = await Task.WhenAll(ids.Select(id => TryReadAsync(InstanceEntityType, id.ToString(), cancellationToken)));
-        return records.Where(record => record is not null).Cast<RuntimeHotStateRecord>().ToArray();
+        return await ReadManyAsync(database, InstanceEntityType, ids, cancellationToken);
     }
 
     public async Task<bool> TryAcquireLeaseAsync(Id instanceId, string leaseId, TimeSpan duration, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
-        var result = await database.ScriptEvaluateAsync(AcquireLeaseScript, [LeaseKey(instanceId)],
+        var leaseKey = LeaseKey(instanceId);
+        var leaseDuration = TimeSpan.FromMilliseconds(Math.Max(1L, (long)duration.TotalMilliseconds));
+        if (await database.StringSetAsync(leaseKey, leaseId, leaseDuration, When.NotExists))
+            return true;
+
+        // Contention and renewal are uncommon. Keep their compare/refresh atomic without
+        // making every uncontended instance acquisition execute on Redis' Lua thread.
+        var result = await database.ScriptEvaluateAsync(AcquireLeaseScript, [leaseKey],
             [leaseId, Math.Max(1L, (long)duration.TotalMilliseconds)]);
         cancellationToken.ThrowIfCancellationRequested();
         return (int)result == 1;
@@ -289,20 +578,68 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         if (!await database.StringSetAsync(ProjectionLockKey, token, leaseDuration, When.NotExists)) return null;
         try
         {
-            var sequences = await database.SortedSetRangeByRankAsync(PendingKey, 0, Math.Max(0, take - 1), Order.Ascending);
+            var leaseSize = Math.Min(
+                Math.Max(1, take),
+                Math.Max(1, _options.MaxProjectionLeaseSize));
+            var sequences = await database.SortedSetRangeByRankAsync(
+                PendingKey, 0, leaseSize - 1, Order.Ascending);
             if (sequences.Length == 0)
             {
                 await ReleaseProjectionLock(database, token);
                 return null;
             }
-            var payloads = await database.HashGetAsync(JournalKey, sequences);
             var batches = new List<RuntimeHotProjectionBatch>(sequences.Length);
-            for (var index = 0; index < sequences.Length; index++)
+            var readChunkSize = Math.Min(
+                sequences.Length,
+                Math.Max(1, _options.ProjectionReadChunkSize));
+            foreach (var sequenceChunk in sequences.Chunk(readChunkSize))
             {
-                if (payloads[index].IsNullOrEmpty) continue;
-                var mutations = JsonSerializer.Deserialize<RuntimeHotStateMutation[]>(payloads[index].ToString(), JsonOptions)
-                    ?? [];
-                batches.Add(new RuntimeHotProjectionBatch(long.Parse(sequences[index].ToString()), mutations));
+                var chunk = sequenceChunk.ToArray();
+                var payloads = await database.HashGetAsync(JournalKey, chunk);
+                var referencesBySequence = new List<(long Sequence, RuntimeHotJournalReference[] References)>(chunk.Length);
+                for (var index = 0; index < chunk.Length; index++)
+                {
+                    if (payloads[index].IsNullOrEmpty) continue;
+                    var references = JsonSerializer.Deserialize<RuntimeHotJournalReference[]>(
+                        payloads[index].ToString(), JsonOptions)
+                        ?? [];
+                    referencesBySequence.Add((long.Parse(chunk[index].ToString()), references));
+                }
+
+                var recordsByReference = new Dictionary<RuntimeHotJournalReference, RuntimeHotStateRecord>();
+                foreach (var group in referencesBySequence
+                    .SelectMany(item => item.References)
+                    .Distinct()
+                    .GroupBy(reference => reference.EntityType, StringComparer.Ordinal))
+                {
+                    var groupReferences = group.ToArray();
+                    var records = await ReadManyAsync(
+                        database,
+                        group.Key,
+                        groupReferences.Select(reference => (RedisValue)reference.EntityId).ToArray(),
+                        cancellationToken);
+                    foreach (var record in records)
+                    {
+                        recordsByReference[new RuntimeHotJournalReference(
+                            record.EntityType,
+                            record.EntityId)] = record;
+                    }
+                }
+
+                foreach (var journal in referencesBySequence)
+                {
+                    var mutations = journal.References
+                        .Select(reference => recordsByReference.GetValueOrDefault(reference))
+                        .Where(record => record is not null)
+                        .Select(record => new RuntimeHotStateMutation(
+                            record!.EntityType,
+                            record.EntityId,
+                            record.InstanceId,
+                            record.Operation,
+                            record.Payload))
+                        .ToArray();
+                    batches.Add(new RuntimeHotProjectionBatch(journal.Sequence, mutations));
+                }
             }
             if (batches.Count == 0)
             {
@@ -346,9 +683,12 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
     {
         cancellationToken.ThrowIfCancellationRequested();
         var database = await GetDatabase(cancellationToken);
+        var cleanupSize = Math.Min(
+            Math.Max(1, take),
+            Math.Max(1, _options.TerminalCleanupBatchSize));
         var result = await database.ScriptEvaluateAsync(CleanupProjectedTerminalScript,
-            [ProjectedTerminalKey, PendingInstancesKey],
-            [Root, Math.Clamp(take, 1, 1_000), InstanceEntityType]);
+            [ProjectedTerminalKey, PendingInstancesKey, LookupsKey],
+            [Root, cleanupSize, InstanceEntityType]);
         cancellationToken.ThrowIfCancellationRequested();
         return (int)result;
     }
@@ -375,6 +715,115 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
             .Select(item => item.Key).ToArray();
     }
 
+    private RedisValue[] BuildCommitValues(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        string journalPayload,
+        string? leaseId,
+        long? expectedVersion)
+    {
+        var indexCount = mutations.Sum(mutation => mutation.Indexes?.Count ?? 0);
+        var values = new List<RedisValue>(6 + (mutations.Count * 6) + (indexCount * 3))
+        {
+            journalPayload,
+            Root,
+            InstanceEntityType,
+            mutations.Count,
+            leaseId ?? string.Empty,
+            expectedVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
+        };
+        foreach (var mutation in mutations)
+        {
+            values.Add(mutation.EntityType);
+            values.Add(mutation.EntityId);
+            values.Add(mutation.InstanceId ?? string.Empty);
+            values.Add((int)mutation.Operation);
+            values.Add(EncodePayload(mutation.Payload));
+            values.Add(mutation.Indexes?.Count ?? 0);
+            if (mutation.Indexes is null) continue;
+            foreach (var index in mutation.Indexes.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                values.Add(index.Key);
+                values.Add(index.Value);
+                values.Add(BuildLookupDigest(mutation.EntityType, index.Key, index.Value));
+            }
+        }
+        return values.ToArray();
+    }
+
+    private static string BuildLookupDigest(string type, string name, string value)
+        => Convert.ToHexString(SHA1.HashData(
+            Encoding.UTF8.GetBytes($"{type}|{name}|{value}"))).ToLowerInvariant();
+
+    private void UpdateLocalGraphs(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        long sequence)
+    {
+        foreach (var group in mutations
+            .Where(mutation => !string.IsNullOrWhiteSpace(mutation.InstanceId))
+            .GroupBy(mutation => new Id(Ulid.Parse(mutation.InstanceId!))))
+        {
+            while (true)
+            {
+                if (!_localGraphs.TryGetValue(group.Key, out var current))
+                {
+                    var initialRecords = group.Select(mutation => new RuntimeHotStateRecord(
+                        mutation.EntityType,
+                        mutation.EntityId,
+                        mutation.InstanceId,
+                        mutation.Operation,
+                        mutation.Payload,
+                        sequence)).ToArray();
+                    var initial = new LocalGraph(
+                        sequence,
+                        initialRecords,
+                        Interlocked.Increment(ref _localGraphGeneration));
+                    if (_localGraphs.TryAdd(group.Key, initial)) break;
+                    continue;
+                }
+                if (current.Version > sequence) break;
+                var records = current.Records.ToDictionary(
+                    record => $"{record.EntityType}{RecordSeparator}{record.EntityId}",
+                    StringComparer.Ordinal);
+                foreach (var mutation in group)
+                {
+                    records[$"{mutation.EntityType}{RecordSeparator}{mutation.EntityId}"] =
+                        new RuntimeHotStateRecord(
+                            mutation.EntityType,
+                            mutation.EntityId,
+                            mutation.InstanceId,
+                            mutation.Operation,
+                            mutation.Payload,
+                            sequence);
+                }
+
+                var updated = new LocalGraph(
+                    sequence,
+                    records.Values.ToArray(),
+                    Interlocked.Increment(ref _localGraphGeneration));
+                if (_localGraphs.TryUpdate(group.Key, updated, current)) break;
+            }
+        }
+    }
+
+    private void StoreLocalGraph(
+        Id instanceId,
+        long version,
+        IReadOnlyCollection<RuntimeHotStateRecord> records)
+    {
+        _localGraphs[instanceId] = new LocalGraph(
+            version,
+            records,
+            Interlocked.Increment(ref _localGraphGeneration));
+        if (_localGraphs.Count <= MaximumLocalGraphs) return;
+
+        var oldest = _localGraphs
+            .OrderBy(candidate => candidate.Value.Generation)
+            .Take(Math.Max(1, _localGraphs.Count - MaximumLocalGraphs))
+            .ToArray();
+        foreach (var candidate in oldest)
+            ((ICollection<KeyValuePair<Id, LocalGraph>>)_localGraphs).Remove(candidate);
+    }
+
     private async Task<long> ReadWatermark(CancellationToken cancellationToken)
     {
         var database = await GetDatabase(cancellationToken);
@@ -392,8 +841,17 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
             {
                 if (_options.ConnectionFactory is not null)
                 {
-                    _connection = await _options.ConnectionFactory(_services, cancellationToken);
-                    _ownsConnection = _options.DisposeConnection;
+                    var supplied = await _options.ConnectionFactory(_services, cancellationToken);
+                    if (_options.UseDedicatedConnection && !_options.DisposeConnection)
+                    {
+                        _connection = await ConnectionMultiplexer.ConnectAsync(supplied.Configuration);
+                        _ownsConnection = true;
+                    }
+                    else
+                    {
+                        _connection = supplied;
+                        _ownsConnection = _options.DisposeConnection;
+                    }
                 }
                 else
                 {
@@ -409,7 +867,103 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
         }
     }
 
-    private RuntimeHotStateRecord? Materialize(RedisValue[] values)
+    private async Task<IReadOnlyCollection<RuntimeHotStateRecord>> ReadManyAsync(
+        IDatabase database,
+        string entityType,
+        RedisValue[] ids,
+        CancellationToken cancellationToken)
+    {
+        var keys = ids.Select(id => EntityKey(entityType, id.ToString())).ToArray();
+        var values = await database.StringGetAsync(keys);
+        cancellationToken.ThrowIfCancellationRequested();
+        var records = new List<RuntimeHotStateRecord>(values.Length);
+        List<Task<RuntimeHotStateRecord?>>? legacyReads = null;
+        for (var index = 0; index < values.Length; index++)
+        {
+            var record = Materialize(values[index]);
+            if (record is not null)
+            {
+                records.Add(record);
+                continue;
+            }
+
+            legacyReads ??= [];
+            legacyReads.Add(TryReadLegacyHashAsync(
+                database,
+                entityType,
+                ids[index].ToString(),
+                cancellationToken));
+        }
+
+        if (legacyReads is not null)
+        {
+            var legacy = await Task.WhenAll(legacyReads);
+            foreach (var record in legacy)
+            {
+                if (record is not null) records.Add(record);
+            }
+        }
+        return records;
+    }
+
+    private async Task<RuntimeHotStateRecord?> TryReadLegacyHashAsync(
+        IDatabase database,
+        string entityType,
+        string entityId,
+        CancellationToken cancellationToken)
+    {
+        var values = await database.HashGetAsync(
+            EntityKey(entityType, entityId),
+            ["entityType", "entityId", "instanceId", "operation", "payload", "sequence"]);
+        cancellationToken.ThrowIfCancellationRequested();
+        return MaterializeLegacy(values);
+    }
+
+    private RuntimeHotStateRecord? Materialize(RedisValue value)
+    {
+        if (value.IsNullOrEmpty) return null;
+        var serialized = value.ToString();
+        Span<Range> ranges = stackalloc Range[6];
+        if (serialized.AsSpan().Split(ranges, RecordSeparator) != 6) return null;
+        if (!int.TryParse(serialized[ranges[3]], out var operation) ||
+            !long.TryParse(serialized[ranges[4]], out var sequence))
+            return null;
+        var instanceId = serialized[ranges[2]];
+        return new RuntimeHotStateRecord(
+            serialized[ranges[0]],
+            serialized[ranges[1]],
+            instanceId.Length == 0 ? null : instanceId,
+            (RuntimeHotStateOperation)operation,
+            DecodePayload(serialized[ranges[5]]),
+            sequence);
+    }
+
+    private string EncodePayload(string payload)
+    {
+        if (_options.PayloadCompressionThresholdBytes == 0 ||
+            payload.Length < _options.PayloadCompressionThresholdBytes)
+            return payload;
+        var input = Encoding.UTF8.GetBytes(payload);
+        if (input.Length < _options.PayloadCompressionThresholdBytes) return payload;
+        var compressed = new byte[BrotliEncoder.GetMaxCompressedLength(input.Length)];
+        if (!BrotliEncoder.TryCompress(input, compressed, out var written, quality: 1, window: 20) ||
+            written >= input.Length)
+            return payload;
+        return CompressedPayloadPrefix + Convert.ToBase64String(compressed, 0, written);
+    }
+
+    private static string DecodePayload(string payload)
+    {
+        if (!payload.StartsWith(CompressedPayloadPrefix, StringComparison.Ordinal)) return payload;
+        var compressed = Convert.FromBase64String(payload[CompressedPayloadPrefix.Length..]);
+        using var input = new MemoryStream(compressed, writable: false);
+        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        brotli.CopyTo(output);
+        return Encoding.UTF8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
+    }
+
+    private static RuntimeHotStateRecord? MaterializeLegacy(RedisValue[] values)
     {
         if (values.Length != 6 || values[0].IsNullOrEmpty || values[4].IsNull) return null;
         return new RuntimeHotStateRecord(
@@ -441,18 +995,29 @@ internal sealed class RedisRuntimeHotStateStore : IRuntimeHotStateStore, IAsyncD
     private RedisKey PendingInstancesKey => $"{Root}:pending-instances";
     private RedisKey ProjectedTerminalKey => $"{Root}:projected-terminal";
     private RedisKey ProjectionLockKey => $"{Root}:projection-lock";
+    private RedisKey LookupsKey => $"{Root}:lookups";
     private RedisKey EntityKey(string type, string id) => $"{Root}:entity:{type}:{id}";
+    private RedisKey GraphKey(Id instanceId) => $"{Root}:graph:{instanceId}";
+    private RedisKey DispatchReceiptKey(Id dispatchId) => $"{Root}:dispatch-receipt:{dispatchId}";
     private RedisKey OwnerKey(Id instanceId, string type) => $"{Root}:owner:{instanceId}:{type}";
+    private RedisKey OwnerTypesKey(Id instanceId) => $"{Root}:owner-types:{instanceId}";
     private RedisKey LeaseKey(Id instanceId) => $"{Root}:lease:{instanceId}";
     private RedisKey LookupKey(string type, string name, string value)
     {
-        var digest = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"{type}|{name}|{value}"))).ToLowerInvariant();
-        return $"{Root}:lookup:{digest}";
+        var digest = BuildLookupDigest(type, name, value);
+        return LookupKey(digest);
     }
+    private RedisKey LookupKey(string digest) => $"{Root}:lookup:{digest}";
 
     public async ValueTask DisposeAsync()
     {
         if (_ownsConnection && _connection is not null) await _connection.DisposeAsync();
         _connectionGate.Dispose();
     }
+
+    private sealed record RuntimeHotJournalReference(string EntityType, string EntityId);
+    private sealed record LocalGraph(
+        long Version,
+        IReadOnlyCollection<RuntimeHotStateRecord> Records,
+        long Generation);
 }

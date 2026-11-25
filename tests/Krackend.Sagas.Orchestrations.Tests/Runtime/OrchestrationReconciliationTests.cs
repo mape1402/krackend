@@ -358,16 +358,34 @@ public sealed class OrchestrationReconciliationTests
     }
 
     [Fact]
-    public async Task UncertainCompensationIsNotRepublished()
+    public async Task PendingCompensationUsesClaimedRecoveryEvenWhenPriorDurableWorkIsMissing()
     {
         var f = new Fixture();
         f.Instance.Status = OrchestrationInstanceStatus.Compensating;
         var compensation = new CompensationExecution { Id = Id.New(), OrchestrationInstanceId = f.Instance.Id, CompensationTaskKey = "undo", Status = "Pending" };
         f.Compensations.GetByInstanceId(f.Instance.Id, Arg.Any<CancellationToken>()).Returns([compensation]);
-        f.Inspector.InspectCompensationAsync(compensation, Arg.Any<CancellationToken>()).Returns(DurableWorkPresence.Missing);
+        f.Compensations.TryGetById(compensation.Id, Arg.Any<CancellationToken>()).Returns(compensation);
+        f.CompensationRecovery.RecoverCompensationAsync(compensation.Id, Arg.Any<CancellationToken>()).Returns(false);
         var result = await f.Service.ReconcileAsync(f.Instance.Id.ToString());
-        Assert.Equal("Intervention", result.Status);
-        await f.CompensationRecovery.DidNotReceiveWithAnyArgs().RecoverCompensationAsync(default);
+        Assert.Equal("Waiting", result.Status);
+        await f.CompensationRecovery.Received(1).RecoverCompensationAsync(compensation.Id, Arg.Any<CancellationToken>());
+        await f.Inspector.DidNotReceiveWithAnyArgs().InspectCompensationAsync(default!);
+        await f.Engine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ClaimedCompensationWaitsWithoutResumingTheEngine()
+    {
+        var f = new Fixture();
+        f.Instance.Status = OrchestrationInstanceStatus.Compensating;
+        var compensation = new CompensationExecution { Id = Id.New(), OrchestrationInstanceId = f.Instance.Id, CompensationTaskKey = "undo", Status = "Dispatching" };
+        f.Compensations.GetByInstanceId(f.Instance.Id, Arg.Any<CancellationToken>()).Returns([compensation]);
+        f.Compensations.TryGetById(compensation.Id, Arg.Any<CancellationToken>()).Returns(compensation);
+        f.CompensationRecovery.RecoverCompensationAsync(compensation.Id, Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await f.Service.ReconcileAsync(f.Instance.Id.ToString());
+
+        Assert.Equal("Waiting", result.Status);
         await f.Engine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
     }
 
@@ -390,7 +408,8 @@ public sealed class OrchestrationReconciliationTests
         f.Instance.Status = OrchestrationInstanceStatus.Compensating;
         var compensation = new CompensationExecution { Id = Id.New(), OrchestrationInstanceId = f.Instance.Id, CompensationTaskKey = "undo", Status = "Pending" };
         f.Compensations.GetByInstanceId(f.Instance.Id, Arg.Any<CancellationToken>()).Returns([compensation]);
-        f.Inspector.InspectCompensationAsync(compensation, Arg.Any<CancellationToken>()).Returns(Task.FromException<DurableWorkPresence>(new InvalidOperationException("storage unavailable")));
+        f.CompensationRecovery.RecoverCompensationAsync(compensation.Id, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("storage unavailable")));
         var result = await f.Service.ReconcileAsync(f.Instance.Id.ToString());
         Assert.Equal("Intervention", result.Status);
         Assert.Contains(result.Findings, x => x.Message.Contains("could not be reconciled"));

@@ -58,7 +58,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
-    public async Task ScheduleAsyncPersistsTimeoutInTheDedicatedLaneAndCapturesItsReference()
+    public async Task ScheduleAsyncPersistsTimeoutInTheDedicatedLaneWithoutASecondSagaCommit()
     {
         var fixture = CreateFixture();
         DurableAction? stored = null;
@@ -69,7 +69,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
                 Arg.Any<ActionKey>(),
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult<MuleUlid?>(stored!.Id));
+            .Returns(_ => Task.FromResult<MuleUlid?>(stored?.Id));
         fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{\"timeout\":true}");
 
         var dueOnUtc = DateTime.UtcNow.AddHours(1);
@@ -86,9 +86,9 @@ public sealed class TaskResponseTimeoutSchedulingTests
         Assert.Equal(dueOnUtc, stored.NextAttemptOnUtc!.Value.UtcDateTime);
         Assert.Equal(stored.Id.ToString(), result.ActionId);
         Assert.Equal("runtime-timeout", result.Lane);
-        Assert.Equal(stored.Id.ToString(), fixture.Task.TimeoutActionId);
-        Assert.Equal("runtime-timeout", fixture.Task.TimeoutActionLane);
-        await fixture.Tasks.Received(1).Update(fixture.Task, Arg.Any<CancellationToken>());
+        Assert.Null(fixture.Task.TimeoutActionId);
+        Assert.Null(fixture.Task.TimeoutActionLane);
+        await fixture.Tasks.DidNotReceive().Update(Arg.Any<TaskExecution>(), Arg.Any<CancellationToken>());
         await fixture.Notifier.Received(1).NotifySavedAsync(stored.Id, "runtime-timeout", Arg.Any<CancellationToken>());
     }
 
@@ -246,7 +246,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
-    public async Task ScheduleAsyncCancelsThePersistedTimerWhenTheCallbackWonTheRace()
+    public async Task ScheduleAsyncLeavesCallbackCancellationToTheStableTimerKey()
     {
         var fixture = CreateFixture();
         DurableAction? stored = null;
@@ -262,8 +262,8 @@ public sealed class TaskResponseTimeoutSchedulingTests
 
         Assert.Null(fixture.Task.TimeoutActionId);
         await fixture.Tasks.DidNotReceive().Update(Arg.Any<TaskExecution>(), Arg.Any<CancellationToken>());
-        await fixture.Cancellation.Received(1).CancelAsync(stored!.Id, Arg.Any<CancellationToken>());
-        await fixture.Notifier.DidNotReceive().NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await fixture.Cancellation.DidNotReceive().CancelAsync(Arg.Any<MuleUlid>(), Arg.Any<CancellationToken>());
+        await fixture.Notifier.Received(1).NotifySavedAsync(stored!.Id, "runtime-timeout", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -325,7 +325,16 @@ public sealed class TaskResponseTimeoutSchedulingTests
             .Returns(new ValueTask<MuleCancellationResult>(Task.FromException<MuleCancellationResult>(
                 new InvalidOperationException("Mule is temporarily unavailable."))));
 
-        var result = await fixture.Scheduler.ScheduleAsync(CreateRequest(fixture.Task, fixture.Attempt, fixture.Dispatch, fixture.Task.ResponseDeadlineUtc!.Value));
+        var request = CreateRequest(fixture.Task, fixture.Attempt, fixture.Dispatch, fixture.Task.ResponseDeadlineUtc!.Value);
+        var result = await fixture.Scheduler.ScheduleAsync(request);
+        await fixture.Scheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+        {
+            OrchestrationInstanceId = request.OrchestrationInstanceId,
+            TaskExecutionId = request.TaskExecutionId,
+            TaskExecutionAttemptId = request.TaskExecutionAttemptId,
+            AttemptNumber = request.AttemptNumber,
+            DueOnUtc = request.DueOnUtc
+        });
 
         Assert.Equal(stored!.Id.ToString(), result.ActionId);
         await fixture.Cancellation.Received(1).CancelAsync(stored.Id, Arg.Any<CancellationToken>());
@@ -343,8 +352,9 @@ public sealed class TaskResponseTimeoutSchedulingTests
                 Arg.Any<ActionKey>(),
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult<MuleUlid?>(stored!.Id));
+            .Returns(_ => Task.FromResult<MuleUlid?>(stored?.Id));
         fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{}");
+        fixture.Task.ResponseDeadlineUtc = DateTime.UtcNow.AddSeconds(5);
         fixture.Tasks.GetResponseTimeoutsMissingAction(25, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyCollection<TaskExecution>>([fixture.Task]));
         fixture.Attempts.GetByTaskExecutionId(fixture.Task.Id, Arg.Any<CancellationToken>())
@@ -356,7 +366,8 @@ public sealed class TaskResponseTimeoutSchedulingTests
 
         Assert.Equal(1, repaired);
         Assert.NotNull(stored);
-        Assert.Equal(stored!.Id.ToString(), fixture.Task.TimeoutActionId);
+        Assert.Null(fixture.Task.TimeoutActionId);
+        await fixture.Notifier.Received(1).NotifySavedAsync(stored!.Id, "runtime-timeout", Arg.Any<CancellationToken>());
         await fixture.Tasks.Received(1).GetResponseTimeoutsMissingAction(25, Arg.Any<CancellationToken>());
     }
 
@@ -446,7 +457,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
         var dispatchId = Id.New();
         var nextDeadline = DateTime.UtcNow.AddMinutes(3);
         var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
-        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+        processor.ProcessScheduledTaskTimeoutAsync(instanceId, taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(true, nextDeadline)));
         var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
         scheduler.ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>())
@@ -478,8 +489,9 @@ public sealed class TaskResponseTimeoutSchedulingTests
     {
         var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
         var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        var instanceId = Id.New();
         var taskId = Id.New();
-        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+        processor.ProcessScheduledTaskTimeoutAsync(instanceId, taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(TaskResponseTimeoutProcessingResult.Ignored));
         var action = new TaskResponseTimeoutAction(processor, scheduler);
         var context = new MuleActionContext<TaskResponseTimeoutActionRequest>(
@@ -487,7 +499,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
             new ServiceCollection().BuildServiceProvider(),
             new TaskResponseTimeoutActionRequest
             {
-                OrchestrationInstanceId = Id.New().ToString(),
+                OrchestrationInstanceId = instanceId.ToString(),
                 TaskExecutionId = taskId.ToString(),
                 TaskExecutionAttemptId = Id.New().ToString(),
                 DispatchId = Id.New().ToString(),
@@ -562,8 +574,9 @@ public sealed class TaskResponseTimeoutSchedulingTests
     {
         var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
         var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        var instanceId = Id.New();
         var taskId = Id.New();
-        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+        processor.ProcessScheduledTaskTimeoutAsync(instanceId, taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(false, RetryRequired: true)));
         var action = new TaskResponseTimeoutAction(processor, scheduler);
         var context = new MuleActionContext<TaskResponseTimeoutActionRequest>(
@@ -571,7 +584,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
             new ServiceCollection().BuildServiceProvider(),
             new TaskResponseTimeoutActionRequest
             {
-                OrchestrationInstanceId = Id.New().ToString(), TaskExecutionId = taskId.ToString(),
+                OrchestrationInstanceId = instanceId.ToString(), TaskExecutionId = taskId.ToString(),
                 TaskExecutionAttemptId = Id.New().ToString(), DispatchId = Id.New().ToString(),
                 AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
             });
@@ -586,8 +599,9 @@ public sealed class TaskResponseTimeoutSchedulingTests
     {
         var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
         var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        var instanceId = Id.New();
         var taskId = Id.New();
-        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+        processor.ProcessScheduledTaskTimeoutAsync(instanceId, taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(false, RetryRequired: true)
                 { WaitingForResponseProcessing = true }));
         var action = new TaskResponseTimeoutAction(processor, scheduler);
@@ -596,7 +610,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
             new ServiceCollection().BuildServiceProvider(),
             new TaskResponseTimeoutActionRequest
             {
-                OrchestrationInstanceId = Id.New().ToString(), TaskExecutionId = taskId.ToString(),
+                OrchestrationInstanceId = instanceId.ToString(), TaskExecutionId = taskId.ToString(),
                 TaskExecutionAttemptId = Id.New().ToString(), DispatchId = Id.New().ToString(),
                 AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
             });

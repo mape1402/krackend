@@ -156,6 +156,20 @@ public interface ITaskDispatchCallbackExecutionStateReader
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Reads callback state using the ownership identifiers already fenced by intake metadata.
+/// This lets hot-state providers materialize the complete instance graph in one operation.
+/// </summary>
+public interface ITaskDispatchIdentifiedCallbackExecutionStateReader
+{
+    /// <summary>Gets the callback ownership chain and graph without secondary lookup round trips.</summary>
+    Task<TaskDispatchCallbackExecutionState> GetCallbackExecutionState(
+        Id instanceId,
+        Id taskExecutionId,
+        Id dispatchId,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>The complete storage snapshot required to process one callback.</summary>
 public sealed record TaskDispatchCallbackExecutionState(
     TaskDispatchExecutionState ExecutionState,

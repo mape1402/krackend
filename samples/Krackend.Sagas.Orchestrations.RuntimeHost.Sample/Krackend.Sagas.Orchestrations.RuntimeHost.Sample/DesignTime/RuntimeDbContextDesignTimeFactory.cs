@@ -26,11 +26,9 @@ public sealed class RuntimeDbContextDesignTimeFactory : IDesignTimeDbContextFact
                 })
             .Options;
 
-        var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
-        var storageOptions = Options.Create(new RuntimeEntityFrameworkStorageOptions
-        {
-            ConfigureModel = sqlServerStorageModelCustomizer.Configure
-        });
+        var configuredStorage = new RuntimeEntityFrameworkStorageOptions();
+        configuredStorage.UseKrackendSqlServerRuntime();
+        var storageOptions = Options.Create(configuredStorage);
 
         return RuntimeDbContext.Create(options, storageOptions);
     }

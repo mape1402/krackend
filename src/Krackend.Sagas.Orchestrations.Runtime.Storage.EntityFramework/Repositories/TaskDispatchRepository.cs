@@ -8,12 +8,13 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository, ITaskDispatchCancellationRepository, ITaskDispatchBatchReader, ITaskDispatchPublicationReceiptRepository, ITaskDispatchPublicationStateRepository, ITaskDispatchAwaitedPublicationRepository, ITaskDispatchActionReferenceRepository, ITaskDispatchCallbackReceiptRepository, ITaskDispatchExecutionStateReader, ITaskDispatchCallbackExecutionStateReader, ITaskDispatchCachedExecutionStateReader, IEmbeddedTaskTransportStateRepository
+internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository, ITaskDispatchCancellationRepository, ITaskDispatchBatchReader, ITaskDispatchPublicationReceiptRepository, ITaskDispatchPublicationStateRepository, ITaskDispatchAwaitedPublicationRepository, ITaskDispatchActionReferenceRepository, ITaskDispatchCallbackReceiptRepository, ITaskDispatchExecutionStateReader, ITaskDispatchCallbackExecutionStateReader, ITaskDispatchIdentifiedCallbackExecutionStateReader, ITaskDispatchCachedExecutionStateReader, IEmbeddedTaskTransportStateRepository
 {
     private readonly bool _persistSuccessfulTransportOutcomes;
     private readonly bool _embedCurrentTransportState;
     private readonly IRuntimeHotStateStore _hotState;
     private readonly RuntimeMutationLeaseScope _mutationLease;
+    private readonly RuntimeEntityFrameworkProviderOptimizations? _providerOptimizations;
 
     public bool EmbedsCurrentTransportState => _embedCurrentTransportState;
 
@@ -29,6 +30,7 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         _embedCurrentTransportState = storageOptions?.Value.EmbedCurrentTransportState ?? false;
         _hotState = hotState;
         _mutationLease = mutationLease;
+        _providerOptimizations = storageOptions?.Value.ProviderOptimizations;
     }
 
     public async Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default)
@@ -205,6 +207,12 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     {
         if (_embedCurrentTransportState)
         {
+            if (_hotState is IRuntimeHotStateDispatchReceiptStore hotReceipts)
+            {
+                await hotReceipts.RecordDispatchPublicationAsync(
+                    dispatchId, publishedOnUtc, cancellationToken);
+                return;
+            }
             if (_hotState?.IsEnabled == true)
             {
                 var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
@@ -254,6 +262,12 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     {
         if (_embedCurrentTransportState)
         {
+            if (_hotState is IRuntimeHotStateDispatchReceiptStore hotReceipts)
+            {
+                await hotReceipts.RecordDispatchPublicationAsync(
+                    dispatchId, publishedOnUtc, cancellationToken);
+                return true;
+            }
             if (_hotState?.IsEnabled == true)
             {
                 var hotTask = await TryReadHotTask(dispatchId, cancellationToken);
@@ -549,7 +563,16 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         }
         if (_embedCurrentTransportState)
         {
-            if (string.Equals(
+            if (_providerOptimizations?.TryReadCallbackGraphAsync is { } readCallbackGraph)
+            {
+                var compactState = await readCallbackGraph(
+                    DbContext,
+                    dispatchId,
+                    cancellationToken);
+                if (compactState is not null)
+                    return compactState;
+            }
+            else if (string.Equals(
                     DbContext.Database.ProviderName,
                     "Npgsql.EntityFrameworkCore.PostgreSQL",
                     StringComparison.Ordinal))
@@ -561,19 +584,6 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
                 if (compactState is not null)
                     return compactState;
             }
-            else if (string.Equals(
-                         DbContext.Database.ProviderName,
-                         "Microsoft.EntityFrameworkCore.SqlServer",
-                         StringComparison.Ordinal))
-            {
-                var compactState = await SqlServerCallbackGraphReader.TryReadAsync(
-                    DbContext,
-                    dispatchId,
-                    cancellationToken);
-                if (compactState is not null)
-                    return compactState;
-            }
-
             // Keep callback ownership and the decision graph as two compact result sets.
             // Joining the instance and callback task to every stage/task row repeats the
             // complete snapshot payload for every graph row. During callback bursts that
@@ -689,6 +699,72 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
                 ownership.Dispatch,
                 ownership.CallbackStage),
             new OrchestrationExecutionGraph(stages, stageTasks));
+    }
+
+    public async Task<TaskDispatchCallbackExecutionState> GetCallbackExecutionState(
+        Id instanceId,
+        Id taskExecutionId,
+        Id dispatchId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_embedCurrentTransportState &&
+            _hotState is IRuntimeHotStateInstanceGraphStore graphStore)
+        {
+            var protectedGraph = _mutationLease?.CurrentGraph;
+            var records = protectedGraph is not null &&
+                _mutationLease!.Current?.InstanceId == instanceId
+                    ? protectedGraph.Records
+                    : await graphStore.ReadInstanceGraphAsync(instanceId, cancellationToken);
+            if (records.Count > 0)
+            {
+                var instance = records
+                    .Where(record => record.Operation != RuntimeHotStateOperation.Delete &&
+                        string.Equals(record.EntityType, typeof(OrchestrationInstance).FullName!, StringComparison.Ordinal) &&
+                        string.Equals(record.EntityId, instanceId.ToString(), StringComparison.Ordinal))
+                    .Select(RuntimeHotStateEntityCodec.Deserialize<OrchestrationInstance>)
+                    .FirstOrDefault(item => item is not null);
+                var task = records
+                    .Where(record => record.Operation != RuntimeHotStateOperation.Delete &&
+                        string.Equals(record.EntityType, typeof(TaskExecution).FullName!, StringComparison.Ordinal) &&
+                        string.Equals(record.EntityId, taskExecutionId.ToString(), StringComparison.Ordinal))
+                    .Select(RuntimeHotStateEntityCodec.Deserialize<TaskExecution>)
+                    .FirstOrDefault(item => item is not null);
+
+                if (instance is not null && task is not null &&
+                    task.OrchestrationInstanceId == instanceId &&
+                    EmbeddedTaskTransportState.TryReadAttempt(task, out var attempt) &&
+                    EmbeddedTaskTransportState.TryReadDispatch(task, out var dispatch) &&
+                    dispatch.Id == dispatchId)
+                {
+                    var hotStages = records
+                        .Where(record => record.Operation != RuntimeHotStateOperation.Delete &&
+                            string.Equals(record.EntityType, typeof(StageExecution).FullName!, StringComparison.Ordinal))
+                        .Select(RuntimeHotStateEntityCodec.Deserialize<StageExecution>)
+                        .Where(item => item is not null)
+                        .Cast<StageExecution>()
+                        .OrderBy(item => item.Order)
+                        .ToArray();
+                    var callbackStage = hotStages.FirstOrDefault(item => item.Id == task.StageExecutionId);
+                    if (callbackStage is not null && HasCompleteHotStagePrefix(hotStages))
+                    {
+                        var hotTasks = records
+                            .Where(record => record.Operation != RuntimeHotStateOperation.Delete &&
+                                string.Equals(record.EntityType, typeof(TaskExecution).FullName!, StringComparison.Ordinal))
+                            .Select(RuntimeHotStateEntityCodec.Deserialize<TaskExecution>)
+                            .Where(item => item is not null && item.StageExecutionId == task.StageExecutionId)
+                            .Cast<TaskExecution>()
+                            .ToArray();
+                        return new TaskDispatchCallbackExecutionState(
+                            new TaskDispatchExecutionState(instance, task, attempt, dispatch, callbackStage),
+                            new OrchestrationExecutionGraph(hotStages, hotTasks));
+                    }
+                }
+            }
+        }
+
+        // Instances created before this layout (or durable-only providers) keep the
+        // existing migration/provider path without weakening callback identity checks.
+        return await GetCallbackExecutionState(dispatchId, cancellationToken);
     }
 
     public bool TryReadCachedExecutionState(
@@ -893,8 +969,18 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
     {
         var tracked = DbContext.TaskExecutions.Local.FirstOrDefault(item => item.Id == taskId);
         if (tracked is not null && EmbeddedTaskTransportState.IsEmbedded(tracked)) return tracked;
-        return RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
+        var task = RuntimeHotStateEntityCodec.Deserialize<TaskExecution>(
             await _hotState.TryReadAsync(typeof(TaskExecution).FullName!, taskId.ToString(), cancellationToken));
+        if (task is not null &&
+            _hotState is IRuntimeHotStateDispatchReceiptStore hotReceipts &&
+            EmbeddedTaskTransportState.TryReadDispatch(task, out var dispatch) &&
+            dispatch.SentOnUtc is null &&
+            await hotReceipts.TryReadDispatchPublicationAsync(taskId, cancellationToken) is { } publishedOnUtc)
+        {
+            dispatch.SentOnUtc = publishedOnUtc;
+            EmbeddedTaskTransportState.StoreDispatch(task, dispatch);
+        }
+        return task;
     }
 
     private async Task<TaskDispatchExecutionState> TryReadHotExecutionState(

@@ -34,7 +34,10 @@ internal sealed class RuntimeHotStateProjectionBackgroundService(
                     : storageOptions.Value.HotStateProjectionMaxDelay;
                 var batchSize = Math.Clamp(storageOptions.Value.HotStateProjectionBatchSize, 1, 100_000);
                 await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(250, interval.TotalMilliseconds)), stoppingToken);
-                if (activity.ShouldDefer(interval, maximumDelay))
+                if (activity.ShouldDefer(
+                    interval,
+                    maximumDelay,
+                    storageOptions.Value.AllowHotStateProjectionDuringForeground))
                     continue;
                 lease = await hotState.TryAcquireProjectionLeaseAsync(batchSize, TimeSpan.FromSeconds(30), stoppingToken);
                 if (lease is null)

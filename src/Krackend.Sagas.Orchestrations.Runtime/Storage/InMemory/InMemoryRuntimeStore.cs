@@ -25,6 +25,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public ConcurrentDictionary<Id, OrchestrationInstance> Instances { get; } = new();
 
+        public ConcurrentDictionary<Id, object> InstanceGates { get; } = new();
+
         public ConcurrentDictionary<Id, StageExecution> Stages { get; } = new();
 
         public ConcurrentDictionary<Id, TaskExecution> Tasks { get; } = new();

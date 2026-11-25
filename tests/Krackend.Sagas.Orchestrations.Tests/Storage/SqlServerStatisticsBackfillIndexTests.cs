@@ -66,6 +66,48 @@ public sealed class SqlServerStatisticsBackfillIndexTests
     }
 
     [Fact]
+    public void PortableCustomizerScaffoldsTheCompleteSqlServerPhysicalModel()
+    {
+        using var provider = CreateProvider(
+            options => options.UseSqlServer("Server=localhost;Database=unused;User Id=sa;Password=unused;TrustServerCertificate=True"),
+            new RuntimeSqlServerStorageModelCustomizer());
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        var model = db.GetService<IDesignTimeModel>().Model;
+
+        var instanceIndexes = model.FindEntityType(typeof(OrchestrationInstance))!.GetIndexes()
+            .Where(index => index.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(OrchestrationInstance.StartedOnUtc), nameof(OrchestrationInstance.Id)]))
+            .ToArray();
+        var catalog = Assert.Single(instanceIndexes,
+            index => index.GetDatabaseName() == "IX_OrchestrationInstances_StartedOnUtc_Id");
+        var running = Assert.Single(instanceIndexes,
+            index => index.GetDatabaseName() == "IX_OrchestrationInstances_Running_StartedOnUtc_Id");
+        Assert.Null(catalog.GetFilter());
+        Assert.Equal("[Status] = 'Running'", running.GetFilter());
+        Assert.Equal([nameof(OrchestrationInstance.CorrelationId)], catalog.GetIncludeProperties());
+        Assert.Equal([nameof(OrchestrationInstance.CorrelationId)], running.GetIncludeProperties());
+
+        var dispatchStorage = model.FindEntityType(typeof(TaskDispatch))!.GetIndexes()
+            .Single(index => index.GetDatabaseName() == "CIX_TaskDispatches_StorageSequence");
+        Assert.True(dispatchStorage.IsUnique);
+        Assert.True(dispatchStorage.IsClustered());
+        Assert.Equal(95, dispatchStorage.GetFillFactor());
+        Assert.Equal(DataCompressionType.Row, dispatchStorage.GetDataCompression());
+
+        var taskType = model.FindEntityType(typeof(TaskExecution))!;
+        Assert.False(taskType.FindPrimaryKey()!.IsClustered());
+        var taskStorage = taskType.GetIndexes()
+            .Single(index => index.GetDatabaseName() ==
+                "CIX_TaskExecutions_StorageBucket_OrchestrationInstanceId_Id");
+        Assert.True(taskStorage.IsUnique);
+        Assert.True(taskStorage.IsClustered());
+        Assert.Equal(
+            ["StorageBucket", nameof(TaskExecution.OrchestrationInstanceId), nameof(TaskExecution.Id)],
+            taskStorage.Properties.Select(property => property.Name));
+    }
+
+    [Fact]
     public void SqlServerDefaultsCanBeDisabledOrOverriddenByTheHost()
     {
         using var recommended = CreateSqlProvider(model => model.UseKrackendSqlServerOptimizations());

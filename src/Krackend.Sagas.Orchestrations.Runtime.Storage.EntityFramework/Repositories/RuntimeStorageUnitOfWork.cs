@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.HotState;
 
@@ -19,19 +20,18 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
     private readonly ILogger<RuntimeStorageUnitOfWork> _logger;
     private readonly RuntimeEntityFrameworkStorageOptions _storageOptions;
-    private readonly RuntimeSqlServerDurableLogFlushCoordinator _durableLogFlushCoordinator;
     private readonly IRuntimeHotStateStore _hotState;
     private readonly RuntimeMutationLeaseScope _mutationLease;
     private readonly RuntimeHotStateProjectionActivity _hotStateProjectionActivity;
     private readonly List<RuntimeReactiveEvent> _pendingEvents = [];
     private readonly List<RuntimeHotStateMutation> _pendingHotMutations = [];
+    private readonly List<RuntimeHotStateMutation> _pendingDurableHotCacheMutations = [];
     private int _deferCount;
     private bool _hotTransactionActive;
 
     public RuntimeStorageUnitOfWork(RuntimeDbContext dbContext, IRuntimeReactiveEventPublisher reactiveEventPublisher,
         ILogger<RuntimeStorageUnitOfWork> logger,
         IOptions<RuntimeEntityFrameworkStorageOptions> storageOptions,
-        RuntimeSqlServerDurableLogFlushCoordinator durableLogFlushCoordinator,
         IRuntimeHotStateStore hotState,
         RuntimeMutationLeaseScope mutationLease,
         RuntimeHotStateProjectionActivity hotStateProjectionActivity)
@@ -40,8 +40,6 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         _reactiveEventPublisher = reactiveEventPublisher ?? throw new ArgumentNullException(nameof(reactiveEventPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _storageOptions = storageOptions?.Value ?? throw new ArgumentNullException(nameof(storageOptions));
-        _durableLogFlushCoordinator = durableLogFlushCoordinator
-            ?? throw new ArgumentNullException(nameof(durableLogFlushCoordinator));
         _hotState = hotState ?? throw new ArgumentNullException(nameof(hotState));
         _mutationLease = mutationLease ?? throw new ArgumentNullException(nameof(mutationLease));
         _hotStateProjectionActivity = hotStateProjectionActivity
@@ -51,7 +49,8 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
     public bool AutoSaveChanges => _deferCount == 0;
 
     public bool PreferBatchedEngineActivations
-        => !string.Equals(
+        => _dbContext.Database.IsRelational() &&
+           !string.Equals(
             _dbContext.Database.ProviderName,
             "Microsoft.EntityFrameworkCore.Sqlite",
             StringComparison.Ordinal);
@@ -62,6 +61,7 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         {
             if (_hotTransactionActive) return NestedRuntimeStorageTransaction.Instance;
             _hotTransactionActive = true;
+            _hotStateProjectionActivity.BeginForeground();
             return new HotStateRuntimeStorageTransaction(this);
         }
         if (_dbContext.Database.CurrentTransaction is not null)
@@ -91,8 +91,10 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         RuntimeConcurrencyMetrics.StorageDetectChangesMilliseconds.Record(
             Stopwatch.GetElapsedTime(detectionStarted).TotalMilliseconds);
         _dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
-        var pendingEntries = _dbContext.ChangeTracker.Entries()
-            .Count(static entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+        var changedEntries = _dbContext.ChangeTracker.Entries()
+            .Where(static entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToArray();
+        var pendingEntries = changedEntries.Length;
         if (pendingEntries == 0)
         {
             // The engine activation already flushed its graph inside the coordinator's
@@ -106,18 +108,34 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         var started = Stopwatch.GetTimestamp();
         try
         {
+            if (!UseHotState &&
+                _hotState is IRuntimeHotStateAggregateStore &&
+                changedEntries.Any(static entry =>
+                    entry.State == EntityState.Added && entry.Entity is OrchestrationInstance))
+            {
+                _pendingDurableHotCacheMutations.AddRange(changedEntries
+                    .Where(entry => RuntimeHotStateEntityCodec.IsSupported(entry.Entity.GetType()))
+                    .Select(RuntimeHotStateEntityCodec.CreateMutation));
+            }
+
             if (UseHotState)
             {
+                var graphMiss = _hotState is IRuntimeHotStateAggregateStore &&
+                                (_mutationLease.CurrentGraph?.Records.Count ?? 0) == 0;
                 var hotEntries = _dbContext.ChangeTracker.Entries()
-                    .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                    .Where(entry => graphMiss ||
+                        entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                     .Where(entry => RuntimeHotStateEntityCodec.IsSupported(entry.Entity.GetType()))
                     .ToArray();
+                var changedHotEntryCount = hotEntries.Count(static entry =>
+                    entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
                 foreach (var entry in hotEntries)
                 {
                     _pendingHotMutations.Add(RuntimeHotStateEntityCodec.CreateMutation(entry));
-                    entry.State = entry.State == EntityState.Deleted ? EntityState.Detached : EntityState.Unchanged;
+                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                        entry.State = entry.State == EntityState.Deleted ? EntityState.Detached : EntityState.Unchanged;
                 }
-                pendingEntries -= hotEntries.Length;
+                pendingEntries -= changedHotEntryCount;
                 if (!_hotTransactionActive)
                 {
                     await CommitHotMutations(cancellationToken);
@@ -129,7 +147,7 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
             // explicit durability command. Re-entering this DbContext from its own
             // SavedChanges interceptor keeps EF's operation active and eventually
             // creates a feedback loop under sustained concurrent load.
-            using (_dbContext.DeferDurableLogFlush())
+            using (_dbContext.DeferProviderDurability())
                 await _dbContext.SaveChangesAsync(cancellationToken);
         }
         finally
@@ -141,7 +159,8 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         }
         if (_dbContext.Database.CurrentTransaction is null)
         {
-            await FlushSqlServerLogIfConfigured();
+            await AwaitProviderDurabilityIfConfigured();
+            await CacheDurableHotAggregateBestEffort(cancellationToken);
             await PublishPendingEvents();
         }
     }
@@ -152,7 +171,31 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
     {
         if (_pendingHotMutations.Count == 0) return;
         var mutations = _pendingHotMutations.ToArray();
-        await _hotState.CommitAsync(mutations, cancellationToken);
+        var lease = _mutationLease.Current;
+        var graph = _mutationLease.CurrentGraph;
+        if (lease is null)
+        {
+            await _hotState.CommitAsync(mutations, cancellationToken);
+        }
+        else if (graph?.IsOptimisticFence == true &&
+                 _hotState is IRuntimeHotStateOptimisticGraphStore optimisticStore)
+        {
+            await optimisticStore.CommitFencedAsync(
+                mutations,
+                lease.InstanceId,
+                graph.Version,
+                cancellationToken);
+            _mutationLease.MarkReleasedByCommit(lease.LeaseId);
+        }
+        else
+        {
+            await _hotState.CommitAndReleaseAsync(
+                mutations,
+                lease.InstanceId,
+                lease.LeaseId,
+                cancellationToken);
+            _mutationLease.MarkReleasedByCommit(lease.LeaseId);
+        }
         _hotStateProjectionActivity.MarkPending();
         _pendingHotMutations.Clear();
     }
@@ -185,6 +228,34 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Failed to publish committed runtime event {EventId}.", eventData.Id);
+        }
+    }
+
+    private async Task CacheDurableHotAggregateBestEffort(CancellationToken cancellationToken)
+    {
+        if (_hotState is not IRuntimeHotStateAggregateStore aggregateStore ||
+            _pendingDurableHotCacheMutations.Count == 0)
+            return;
+
+        var pending = _pendingDurableHotCacheMutations.ToArray();
+        _pendingDurableHotCacheMutations.Clear();
+        foreach (var group in pending
+                     .Where(static mutation => !string.IsNullOrWhiteSpace(mutation.InstanceId))
+                     .GroupBy(static mutation => mutation.InstanceId!, StringComparer.Ordinal))
+        {
+            try
+            {
+                await aggregateStore.CacheAggregateAsync(
+                    new Id(Ulid.Parse(group.Key)),
+                    group.ToArray(),
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception,
+                    "Could not cache the durably created saga aggregate '{InstanceId}' in hot state.",
+                    group.Key);
+            }
         }
     }
 
@@ -226,11 +297,12 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
 
             await _transaction.CommitAsync(cancellationToken);
             _logicallyCommitted = true;
+            await _unitOfWork.CacheDurableHotAggregateBestEffort(cancellationToken);
 
             // A forced-delayed commit is visible and atomic but not yet a safe broker
             // acknowledgement boundary. Start the physical barrier immediately; the
             // coordinator may overlap already-committed dispatch I/O with this task.
-            _durabilityBarrier = _unitOfWork.FlushSqlServerLogIfConfigured();
+            _durabilityBarrier = _unitOfWork.AwaitProviderDurabilityIfConfigured();
         }
 
         public async Task AwaitDurabilityAsync()
@@ -256,6 +328,7 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
                 if (!_logicallyCommitted)
                 {
                     _unitOfWork._pendingEvents.Clear();
+                    _unitOfWork._pendingDurableHotCacheMutations.Clear();
                     // Rolled-back entities must not be flushed by a later error
                     // update using the same scoped DbContext.
                     _unitOfWork._dbContext.ChangeTracker.Clear();
@@ -291,6 +364,7 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         public ValueTask DisposeAsync()
         {
             unitOfWork._hotTransactionActive = false;
+            unitOfWork._hotStateProjectionActivity.EndForeground();
             if (!_committed)
             {
                 unitOfWork._pendingHotMutations.Clear();
@@ -301,20 +375,9 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
         }
     }
 
-    private Task FlushSqlServerLogIfConfigured()
-    {
-        if (!_storageOptions.CoordinateSqlServerDurableLogFlushes ||
-            !string.Equals(
-                _dbContext.Database.ProviderName,
-                "Microsoft.EntityFrameworkCore.SqlServer",
-                StringComparison.Ordinal))
-            return Task.CompletedTask;
-
-        return _durableLogFlushCoordinator.FlushAsync(
-            _dbContext,
-            _storageOptions.SqlServerDurableLogFlushWindow,
-            _storageOptions.SqlServerDurableLogFlushConcurrency);
-    }
+    private Task AwaitProviderDurabilityIfConfigured()
+        => _storageOptions.ProviderOptimizations?.AwaitDurabilityAsync?.Invoke(_dbContext)
+            ?? Task.CompletedTask;
 
     private sealed class NestedRuntimeStorageTransaction : IRuntimeStorageTransaction
     {

@@ -178,9 +178,15 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
                         ["LeaseExpiresOnUtc"] = acquisition.Lease.ExpiresOnUtc
                     });
 
+                    Exception mutationFailure = null;
                     try
                     {
                         await operation(cancellationToken);
+                    }
+                    catch (Exception exception)
+                    {
+                        mutationFailure = exception;
+                        throw;
                     }
                     finally
                     {
@@ -189,10 +195,22 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
                             Stopwatch.GetElapsedTime(mutationStarted).TotalMilliseconds);
                         Pop(instanceId);
                         _postLeaseWork.Remove(instanceId);
+                        try
+                        {
+                            await _instanceRepository.ReleaseLease(
+                                instanceId, leaseId, CancellationToken.None);
+                        }
+                        catch (Exception releaseException) when (mutationFailure is not null)
+                        {
+                            _logger.LogWarning(
+                                releaseException,
+                                "Could not release orchestration lease '{leaseId}' for instance '{instanceId}' after a failed mutation.",
+                                leaseId,
+                                instanceId);
+                        }
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None);
                     await _storageUnitOfWork.SaveChanges(cancellationToken);
                     pipelinedTransaction = await CommitForDispatchPipeliningAsync(
                         transaction, cancellationToken);
@@ -219,11 +237,39 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         var leaseId = $"runtime:{_replicaBootId}:{Id.NewDistributed()}";
         var leaseDuration = ResolveLeaseDuration(_options);
         var acquisitionStarted = Stopwatch.GetTimestamp();
-        (bool InstanceMissing, OrchestrationInstanceLease Lease) acquisition;
+        (bool InstanceMissing, OrchestrationInstanceLease Lease, RuntimeHotStateLeaseGraph Graph) acquisition;
         try
         {
-            acquisition = await TryAcquireLeaseAsync(
-                instanceId, leaseId, leaseDuration, waitForLease, cancellationToken);
+            if (_hotState is IRuntimeHotStateOptimisticGraphStore optimisticStore)
+            {
+                var graph = await optimisticStore.ReadGraphFenceAsync(instanceId, cancellationToken);
+                var now = DateTime.UtcNow;
+                acquisition = (
+                    false,
+                    new OrchestrationInstanceLease(
+                        instanceId,
+                        leaseId,
+                        now,
+                        now.Add(leaseDuration)),
+                    graph);
+            }
+            else if (_hotState is IRuntimeHotStateLeaseGraphStore graphStore)
+            {
+                acquisition = await TryAcquireHotStateLeaseAsync(
+                    graphStore,
+                    instanceId,
+                    leaseId,
+                    leaseDuration,
+                    waitForLease,
+                    cancellationToken,
+                    _options);
+            }
+            else
+            {
+                var lease = await TryAcquireLeaseAsync(
+                    instanceId, leaseId, leaseDuration, waitForLease, cancellationToken);
+                acquisition = (lease.InstanceMissing, lease.Lease, null);
+            }
         }
         catch
         {
@@ -241,10 +287,11 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
 
         PostLeaseWork postLeaseWork = null;
         IRuntimePipelinedStorageTransaction pipelinedTransaction = null;
-        var leaseHeld = true;
+        var optimisticFence = acquisition.Graph?.IsOptimisticFence == true;
+        var leaseHeld = !optimisticFence;
         try
         {
-            using var mutationScope = _mutationLease.Enter(acquisition.Lease);
+            using var mutationScope = _mutationLease.Enter(acquisition.Lease, acquisition.Graph);
             await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
             using (_storageUnitOfWork.DeferAutoSave())
             {
@@ -275,7 +322,8 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
                 }
             }
 
-            await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None);
+            if (!optimisticFence && !_mutationLease.ReleasedByCommit)
+                await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None);
             leaseHeld = false;
         }
         finally
@@ -320,7 +368,9 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             return false;
         }
 
-        if (_hotState?.IsEnabled == true && _storageUnitOfWork.PreferBatchedEngineActivations)
+        if (_hotState?.IsEnabled == true &&
+            _hotState is not IRuntimeHotStateAggregateStore &&
+            _storageUnitOfWork.PreferBatchedEngineActivations)
             return await TryExecuteWithHotStateAsync(
                 proposedInstanceId, operation, localLease, cancellationToken, waitForLocalGate);
 
@@ -681,6 +731,46 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             {
                 return (true, null);
             }
+
+            await Task.Delay(retryDelay, cancellationToken);
+        }
+    }
+
+    private static async Task<(bool InstanceMissing, OrchestrationInstanceLease Lease, RuntimeHotStateLeaseGraph Graph)>
+        TryAcquireHotStateLeaseAsync(
+            IRuntimeHotStateLeaseGraphStore graphStore,
+            Id instanceId,
+            string leaseId,
+            TimeSpan leaseDuration,
+            bool waitForLease,
+            CancellationToken cancellationToken,
+            OrchestrationCoordinationOptions options)
+    {
+        var waitWindow = ResolveLeaseUnavailableWait(options);
+        var retryDelay = ResolveLeaseUnavailableRetryDelay(options);
+        var deadline = waitForLease ? DateTime.UtcNow.Add(waitWindow) : DateTime.UtcNow;
+
+        while (true)
+        {
+            var now = DateTime.UtcNow;
+            var graph = await graphStore.TryAcquireLeaseWithGraphAsync(
+                instanceId,
+                leaseId,
+                leaseDuration,
+                cancellationToken);
+            if (graph is not null)
+            {
+                return (
+                    false,
+                    new OrchestrationInstanceLease(
+                        instanceId,
+                        leaseId,
+                        now,
+                        now.Add(leaseDuration)),
+                    graph);
+            }
+            if (now >= deadline)
+                return (false, null, null);
 
             await Task.Delay(retryDelay, cancellationToken);
         }

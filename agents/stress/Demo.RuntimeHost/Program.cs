@@ -59,11 +59,8 @@ var usePostgres = string.Equals(
     builder.Configuration["Demo:RuntimeProvider"],
     "PostgreSql",
     StringComparison.OrdinalIgnoreCase);
-var useSqlServerMemoryOptimizedExecutionState = builder.Configuration.GetValue(
-    "Demo:SqlServerMemoryOptimizedExecutionState",
-    false);
-var applySqlServerDevelopmentTuning = !usePostgres && builder.Configuration.GetValue(
-    "Demo:SqlServerApplyDevelopmentTuning",
+var requireSqlServerPortableDatabaseTuning = !usePostgres && builder.Configuration.GetValue(
+    "Demo:SqlServerRequirePortableDatabaseTuning",
     false);
 var coordinateSqlServerDurableLogFlushes = !usePostgres && builder.Configuration.GetValue(
     "Demo:SqlServerCoordinateDurableLogFlushes",
@@ -85,6 +82,8 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
         else
             options.UseSqlServer(runtimeConnection, sqlServer =>
             {
+                sqlServer.MigrationsAssembly(typeof(Program).Assembly.GetName().Name);
+                sqlServer.MigrationsHistoryTable("__RuntimeStorageMigrationsHistory", "Runtime");
                 // Runtime mutations normally touch 2-6 rows. SQL Server's EF defaults
                 // avoid batching very small changes, which turns one saga transition
                 // into several database round trips. Under a 200-instance burst those
@@ -95,10 +94,21 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
     },
     storage =>
     {
-        storage.ConfigureModel = usePostgres
-            ? new RuntimePostgresStorageModelCustomizer().Configure
-            : new RuntimeSqlServerStorageModelCustomizer(
-                useSqlServerMemoryOptimizedExecutionState).Configure;
+        if (usePostgres)
+            storage.ConfigureModel = new RuntimePostgresStorageModelCustomizer().Configure;
+        else
+            storage.UseKrackendSqlServerRuntime(sqlServer =>
+            {
+                sqlServer.CoordinateDurableLogFlushes = coordinateSqlServerDurableLogFlushes;
+                sqlServer.DurableLogFlushWindow = TimeSpan.FromMilliseconds(Math.Clamp(
+                    builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushWindowMilliseconds", 8),
+                    0,
+                    100));
+                sqlServer.DurableLogFlushConcurrency = Math.Clamp(
+                    builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushConcurrency", 4),
+                    1,
+                    64);
+            });
         storage.PersistRoutineExecutionTransitions = false;
         storage.PersistSuccessfulTransportOutcomes = false;
         storage.EmbedCurrentTransportState = true;
@@ -107,15 +117,6 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
         storage.HotStateProjectionInterval = TimeSpan.FromMilliseconds(750);
         storage.HotStateProjectionMaxDelay = TimeSpan.FromSeconds(15);
         storage.HotStateProjectionBatchSize = 10_000;
-        storage.CoordinateSqlServerDurableLogFlushes = coordinateSqlServerDurableLogFlushes;
-        storage.SqlServerDurableLogFlushWindow = TimeSpan.FromMilliseconds(Math.Clamp(
-            builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushWindowMilliseconds", 8),
-            0,
-            100));
-        storage.SqlServerDurableLogFlushConcurrency = Math.Clamp(
-            builder.Configuration.GetValue("Demo:SqlServerDurableLogFlushConcurrency", 4),
-            1,
-            64);
     });
 builder.Services.AddKrackendOrchestrationsRuntime().AddPigeon(builder.Configuration, pigeon =>
 {
@@ -187,355 +188,9 @@ builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    if (!usePostgres && useSqlServerMemoryOptimizedExecutionState)
-        await EnsureSqlServerMemoryOptimizedDatabaseAsync(runtimeConnection);
     var runtimeDb = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
-    await runtimeDb.Database.EnsureCreatedAsync();
-    if (runtimeDb.Database.IsSqlServer() && applySqlServerDevelopmentTuning)
-    {
-    // This runtime is an OLTP workload: diagnostics and status polling must never
-    // take shared locks that stall unrelated saga commits. Row-versioned READ
-    // COMMITTED preserves transaction semantics while allowing readers and writers
-    // to progress concurrently.
-    await runtimeDb.Database.ExecuteSqlRawAsync("""
-        IF EXISTS (
-            SELECT 1
-            FROM sys.databases
-            WHERE database_id = DB_ID()
-              AND is_read_committed_snapshot_on = 0)
-        BEGIN
-            DECLARE @runtimeDatabaseName nvarchar(258) = QUOTENAME(DB_NAME());
-            EXEC(N'ALTER DATABASE ' + @runtimeDatabaseName +
-                N' SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;');
-        END;
-        IF EXISTS (
-            SELECT 1
-            FROM sys.databases
-            WHERE database_id = DB_ID()
-              AND recovery_model_desc <> N'SIMPLE')
-        BEGIN
-            DECLARE @simpleRuntimeDatabaseName nvarchar(258) = QUOTENAME(DB_NAME());
-            EXEC(N'ALTER DATABASE ' + @simpleRuntimeDatabaseName + N' SET RECOVERY SIMPLE;');
-        END;
-        DECLARE @checkpointRuntimeDatabaseName nvarchar(258) = QUOTENAME(DB_NAME());
-        EXEC(N'ALTER DATABASE ' + @checkpointRuntimeDatabaseName +
-            N' SET TARGET_RECOVERY_TIME = 300 SECONDS;');
-        EXEC(N'ALTER DATABASE ' + @checkpointRuntimeDatabaseName +
-            N' SET AUTO_UPDATE_STATISTICS_ASYNC ON;');
-        """);
-    await runtimeDb.Database.ExecuteSqlRawAsync(coordinateSqlServerDurableLogFlushes
-        ? "DECLARE @name nvarchar(258) = QUOTENAME(DB_NAME()); EXEC(N'ALTER DATABASE ' + @name + N' SET DELAYED_DURABILITY = FORCED;');"
-        : "DECLARE @name nvarchar(258) = QUOTENAME(DB_NAME()); EXEC(N'ALTER DATABASE ' + @name + N' SET DELAYED_DURABILITY = DISABLED;');");
-    // Timestamp-leading runtime IDs preserve insertion locality. Cluster on that
-    // identifier directly: hashing it caused near one page split per insert.
-    await runtimeDb.Database.ExecuteSqlRawAsync("""
-        SET QUOTED_IDENTIFIER ON;
-        SET ANSI_NULLS ON;
-        SET ANSI_PADDING ON;
-        SET ANSI_WARNINGS ON;
-        SET ARITHABORT ON;
-        SET CONCAT_NULL_YIELDS_NULL ON;
-        SET NUMERIC_ROUNDABORT OFF;
-
-        -- The EF model declares this key unique, but EnsureCreated does not repair an
-        -- older non-unique index. Mule retries rely on this physical constraint as the
-        -- atomic winner when two deliveries race to create the same saga.
-        IF OBJECTPROPERTYEX(OBJECT_ID(N'[Runtime].[OrchestrationInstances]'), N'TableIsMemoryOptimized') = 1
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM [Runtime].[OrchestrationInstances]
-                GROUP BY [StartIdempotencyKey]
-                HAVING COUNT_BIG(*) > 1)
-                THROW 51001, 'Duplicate orchestration start idempotency keys must be repaired before startup.', 1;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND is_unique = 1
-                  AND name IN (
-                      N'IX_OrchestrationInstances_StartIdempotencyKey',
-                      N'UX_OrchestrationInstances_StartIdempotencyKey'))
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    ADD INDEX [UX_OrchestrationInstances_StartIdempotencyKey]
-                    UNIQUE NONCLUSTERED ([StartIdempotencyKey]);');
-
-            IF EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_StartIdempotencyKey'
-                  AND is_unique = 0)
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    DROP INDEX [IX_OrchestrationInstances_StartIdempotencyKey];');
-
-            -- These were filtered indexes in the portable model. Hekaton strips the
-            -- filters, turning them into a hot full-table revision index and a second
-            -- copy of the primary-key shape. Neither serves its intended predicate.
-            IF EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_StatisticsRevision')
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    DROP INDEX [IX_OrchestrationInstances_StatisticsRevision];');
-
-            IF EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_DispatchCancellationPending_Id')
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    DROP INDEX [IX_OrchestrationInstances_DispatchCancellationPending_Id];');
-
-            IF EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_Running_StartedOnUtc_Id')
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    DROP INDEX [IX_OrchestrationInstances_Running_StartedOnUtc_Id];');
-
-            -- A memory-optimized nonclustered index supports only its declared
-            -- traversal direction. Without this DESC index, TOP (25) newest rows
-            -- scans and sorts the complete instance history for every grid block.
-            IF EXISTS (
-                SELECT 1
-                FROM sys.indexes AS i
-                JOIN sys.index_columns AS ic
-                  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
-                WHERE i.object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND i.name = N'IX_OrchestrationInstances_StartedOnUtc_Id'
-                  AND ic.key_ordinal > 0
-                  AND ic.is_descending_key = 0)
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    DROP INDEX [IX_OrchestrationInstances_StartedOnUtc_Id];');
-
-            IF NOT EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_StartedOnUtc_Id')
-                EXEC(N'ALTER TABLE [Runtime].[OrchestrationInstances]
-                    ADD INDEX [IX_OrchestrationInstances_StartedOnUtc_Id]
-                    NONCLUSTERED ([StartedOnUtc] DESC, [Id] DESC);');
-        END;
-
-        DECLARE @runtimeTable sysname;
-        DECLARE @runtimeSql nvarchar(max);
-        DECLARE runtime_identity_cursor CURSOR LOCAL FAST_FORWARD FOR
-            SELECT [TableName]
-            FROM (VALUES
-                (N'TaskExecutionAttempts'),
-                (N'TaskDispatches')) AS RuntimeTables([TableName]);
-        OPEN runtime_identity_cursor;
-        FETCH NEXT FROM runtime_identity_cursor INTO @runtimeTable;
-        WHILE @@FETCH_STATUS = 0
-        BEGIN
-            IF COL_LENGTH(N'Runtime.' + @runtimeTable, N'StorageBucket') IS NOT NULL
-            BEGIN
-                SET @runtimeSql =
-                    N' DROP INDEX ' + QUOTENAME(N'CIX_' + @runtimeTable + N'_StorageBucket_Id') +
-                    N' ON [Runtime].' + QUOTENAME(@runtimeTable) + N';' +
-                    N' ALTER TABLE [Runtime].' + QUOTENAME(@runtimeTable) +
-                    N' DROP CONSTRAINT ' + QUOTENAME(N'PK_' + @runtimeTable) + N';' +
-                    N' ALTER TABLE [Runtime].' + QUOTENAME(@runtimeTable) +
-                    N' ADD CONSTRAINT ' + QUOTENAME(N'PK_' + @runtimeTable) +
-                    N' PRIMARY KEY CLUSTERED ([Id]) WITH (FILLFACTOR = 100, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);' +
-                    N' ALTER TABLE [Runtime].' + QUOTENAME(@runtimeTable) +
-                    N' DROP COLUMN [StorageBucket];';
-                EXEC sys.sp_executesql @runtimeSql;
-            END;
-            FETCH NEXT FROM runtime_identity_cursor INTO @runtimeTable;
-        END;
-        CLOSE runtime_identity_cursor;
-        DEALLOCATE runtime_identity_cursor;
-
-        IF NOT EXISTS (
-            SELECT 1
-            FROM sys.extended_properties
-            WHERE class = 0
-              AND name = N'KrackendCompactRuntimeValuesInRowV2')
-        BEGIN
-            EXEC sys.sp_tableoption N'[Runtime].[TaskExecutionAttempts]',
-                N'large value types out of row', N'OFF';
-            EXEC sys.sp_tableoption N'[Runtime].[TaskDispatches]',
-                N'large value types out of row', N'OFF';
-
-            ALTER INDEX ALL ON [Runtime].[TaskExecutionAttempts]
-                REBUILD WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW, SORT_IN_TEMPDB = ON, MAXDOP = 4);
-            ALTER INDEX ALL ON [Runtime].[TaskDispatches]
-                REBUILD WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW, SORT_IN_TEMPDB = ON, MAXDOP = 4);
-
-            EXEC sys.sp_addextendedproperty
-                @name = N'KrackendCompactRuntimeValuesInRowV2',
-                @value = N'Enabled';
-        END;
-
-        IF NOT EXISTS (
-            SELECT 1
-            FROM sys.extended_properties
-            WHERE class = 0
-              AND name = N'KrackendRuntimeRowCompressionV1')
-        BEGIN
-            ALTER INDEX ALL ON [Runtime].[TaskExecutionAttempts]
-                REBUILD WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW, SORT_IN_TEMPDB = ON, MAXDOP = 4);
-            ALTER INDEX ALL ON [Runtime].[TaskDispatches]
-                REBUILD WITH (FILLFACTOR = 95, DATA_COMPRESSION = ROW, SORT_IN_TEMPDB = ON, MAXDOP = 4);
-
-            EXEC sys.sp_addextendedproperty
-                @name = N'KrackendRuntimeRowCompressionV1',
-                @value = N'Enabled';
-        END;
-
-        ALTER INDEX [PK_ExecutionTransitions] ON [Runtime].[ExecutionTransitions] SET (OPTIMIZE_FOR_SEQUENTIAL_KEY = ON);
-        ALTER INDEX [PK_TaskDispatches] ON [Runtime].[TaskDispatches] SET (OPTIMIZE_FOR_SEQUENTIAL_KEY = ON);
-        ALTER INDEX [PK_TaskExecutionAttempts] ON [Runtime].[TaskExecutionAttempts] SET (OPTIMIZE_FOR_SEQUENTIAL_KEY = ON);
-        ALTER INDEX [CIX_TaskDispatches_StorageSequence] ON [Runtime].[TaskDispatches] SET (OPTIMIZE_FOR_SEQUENTIAL_KEY = ON);
-        ALTER INDEX [CIX_TaskExecutionAttempts_StorageSequence] ON [Runtime].[TaskExecutionAttempts] SET (OPTIMIZE_FOR_SEQUENTIAL_KEY = ON);
-        DROP INDEX IF EXISTS [IX_SagaStatisticsObservations_Processed_InstanceId_Revision]
-            ON [Runtime].[SagaStatisticsObservations];
-        DROP INDEX IF EXISTS [IX_SagaStatisticsObservations_Pending_InstanceId_Revision]
-            ON [Runtime].[SagaStatisticsObservations];
-        CREATE INDEX [IX_SagaStatisticsObservations_Pending_InstanceId_Revision]
-            ON [Runtime].[SagaStatisticsObservations] ([InstanceId], [Revision])
-            WHERE [Processed] = 0;
-        IF OBJECTPROPERTYEX(OBJECT_ID(N'[Runtime].[OrchestrationInstances]'), N'TableIsMemoryOptimized') = 0
-        BEGIN
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_LastUpdatedOnUtc]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Status_LastUpdatedOnUtc]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_SagaId]
-                ON [Runtime].[OrchestrationInstances];
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                AND name = N'IX_OrchestrationInstances_CorrelationId')
-                CREATE INDEX [IX_OrchestrationInstances_CorrelationId]
-                    ON [Runtime].[OrchestrationInstances] ([CorrelationId]);
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_StartedOnUtc_Status]
-                ON [Runtime].[OrchestrationInstances];
-            IF NOT EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_StartedOnUtc_Id')
-                CREATE INDEX [IX_OrchestrationInstances_StartedOnUtc_Id]
-                    ON [Runtime].[OrchestrationInstances] ([StartedOnUtc] DESC, [Id] DESC)
-                    WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_ExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Status_ExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Running_ExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            CREATE INDEX [IX_OrchestrationInstances_Running_ExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances] ([ExpiresOnUtc], [Id])
-                INCLUDE ([CorrelationId])
-                WHERE [Status] = N'Running' AND [ExpiresOnUtc] IS NOT NULL
-                WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_IdleExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Status_IdleExpiresOnUtc]
-                ON [Runtime].[OrchestrationInstances];
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            CREATE INDEX [IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances] ([IdleExpiresOnUtc], [Id])
-                INCLUDE ([CorrelationId])
-                WHERE [Status] = N'Idle' AND [IdleExpiresOnUtc] IS NOT NULL
-                WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-
-            DROP INDEX IF EXISTS [IX_OrchestrationInstances_Running_StartedOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances];
-            CREATE INDEX [IX_OrchestrationInstances_Running_StartedOnUtc_Id]
-                ON [Runtime].[OrchestrationInstances] ([StartedOnUtc], [Id])
-                INCLUDE ([CorrelationId])
-                WHERE [Status] = N'Running'
-                WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-
-            IF NOT EXISTS (
-                SELECT 1 FROM sys.indexes
-                WHERE object_id = OBJECT_ID(N'[Runtime].[OrchestrationInstances]')
-                  AND name = N'IX_OrchestrationInstances_DispatchCancellationPending_LastUpdatedOnUtc'
-                  AND has_filter = 1)
-            BEGIN
-                DROP INDEX IF EXISTS [IX_OrchestrationInstances_DispatchCancellationPending_LastUpdatedOnUtc]
-                    ON [Runtime].[OrchestrationInstances];
-                CREATE INDEX [IX_OrchestrationInstances_DispatchCancellationPending_LastUpdatedOnUtc]
-                    ON [Runtime].[OrchestrationInstances] ([DispatchCancellationPending], [LastUpdatedOnUtc])
-                    WHERE [DispatchCancellationPending] = 1;
-            END;
-        END;
-
-        IF OBJECTPROPERTYEX(OBJECT_ID(N'[Runtime].[TaskExecutions]'), N'TableIsMemoryOptimized') = 0
-        BEGIN
-            DROP INDEX IF EXISTS [IX_TaskExecutions_Status] ON [Runtime].[TaskExecutions];
-            DROP INDEX IF EXISTS [IX_TaskExecutions_Status_ResponseDeadlineUtc] ON [Runtime].[TaskExecutions];
-            DROP INDEX IF EXISTS [IX_TaskExecutions_Status_TimeoutActionId] ON [Runtime].[TaskExecutions];
-            DROP INDEX IF EXISTS [IX_TaskExecutions_Status_CorrelationId_ResponseDeadlineUtc] ON [Runtime].[TaskExecutions];
-            DROP INDEX IF EXISTS [IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id] ON [Runtime].[TaskExecutions];
-            DROP INDEX IF EXISTS [IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id] ON [Runtime].[TaskExecutions];
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[Runtime].[TaskExecutions]')
-                AND name = N'IX_TaskExecutions_CorrelationId')
-                CREATE INDEX [IX_TaskExecutions_CorrelationId]
-                    ON [Runtime].[TaskExecutions] ([CorrelationId]);
-            CREATE INDEX [IX_TaskExecutions_Waiting_ResponseDeadlineUtc_Id]
-                ON [Runtime].[TaskExecutions] ([ResponseDeadlineUtc], [Id])
-                INCLUDE ([CorrelationId])
-                WHERE [Status] = N'WaitingResponse' AND [ResponseDeadlineUtc] IS NOT NULL
-                WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-            CREATE INDEX [IX_TaskExecutions_LegacyWaiting_WaitingSinceUtc_Id]
-                ON [Runtime].[TaskExecutions] ([WaitingSinceUtc], [Id])
-                INCLUDE ([CorrelationId])
-                WHERE [Status] = N'WaitingResponse' AND [ResponseDeadlineUtc] IS NULL
-                WITH (OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF);
-        END;
-
-        DROP INDEX IF EXISTS [IX_TaskExecutionAttempts_Status] ON [Runtime].[TaskExecutionAttempts];
-        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[Runtime].[TaskExecutionAttempts]')
-            AND name = N'IX_TaskExecutionAttempts_DispatchId')
-            CREATE INDEX [IX_TaskExecutionAttempts_DispatchId]
-                ON [Runtime].[TaskExecutionAttempts] ([DispatchId]);
-        DROP INDEX IF EXISTS [IX_TaskExecutionAttempts_Status_TaskExecutionId_WaitingSinceUtc]
-            ON [Runtime].[TaskExecutionAttempts];
-
-        DROP INDEX IF EXISTS [IX_TaskDispatches_DispatchStatus] ON [Runtime].[TaskDispatches];
-        DROP INDEX IF EXISTS [IX_TaskDispatches_DispatchStatus_CorrelationId] ON [Runtime].[TaskDispatches];
-        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'[Runtime].[TaskDispatches]')
-            AND name = N'IX_TaskDispatches_CommandId')
-            CREATE INDEX [IX_TaskDispatches_CommandId]
-                ON [Runtime].[TaskDispatches] ([CommandId]);
-        DROP INDEX IF EXISTS [IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc]
-            ON [Runtime].[TaskDispatches];
-        CREATE INDEX [IX_TaskDispatches_QueuePending_Id_ScheduledOnUtc]
-            ON [Runtime].[TaskDispatches] ([ScheduledOnUtc], [Id])
-            WHERE [DispatchStatus] = N'QueuePending';
-
-        DROP INDEX IF EXISTS [IX_TaskDispatches_PhysicalCancellationPending]
-            ON [Runtime].[TaskDispatches];
-        CREATE INDEX [IX_TaskDispatches_PhysicalCancellationPending]
-            ON [Runtime].[TaskDispatches] ([PhysicalCancellationPending])
-            WHERE [PhysicalCancellationPending] = 1;
-
-        DROP INDEX IF EXISTS [IX_TaskDispatches_CallbackPending_CallbackAcceptedOnUtc]
-            ON [Runtime].[TaskDispatches];
-        CREATE INDEX [IX_TaskDispatches_CallbackPending_CallbackAcceptedOnUtc]
-            ON [Runtime].[TaskDispatches] ([CallbackPending], [CallbackAcceptedOnUtc])
-            WHERE [CallbackPending] = 1;
-        """);
-    }
-    else if (runtimeDb.Database.IsNpgsql())
-    {
-        // EnsureCreated does not reconcile indexes for an existing database.
-        // The revision lookup is only used by a one-time legacy backfill. Keeping
-        // even a partial index prevents HOT updates because its predicate refers
-        // to StatisticsRevision, which advances on every callback.
-        await runtimeDb.Database.ExecuteSqlRawAsync("""
-            DROP INDEX IF EXISTS "Runtime"."IX_OrchestrationInstances_StatisticsRevision";
-            CREATE INDEX IF NOT EXISTS "IX_OrchestrationInstances_StartedOnUtc_Id"
-                ON "Runtime"."OrchestrationInstances" ("StartedOnUtc", "Id");
-            ALTER TABLE "Runtime"."OrchestrationInstances" SET (fillfactor = 30);
-            ALTER TABLE "Runtime"."TaskExecutions" SET (fillfactor = 70);
-            ALTER TABLE "Runtime"."StageExecutions" SET (fillfactor = 80);
-            """);
-    }
+    if (runtimeDb.Database.IsSqlServer() && requireSqlServerPortableDatabaseTuning)
+        await ValidateSqlServerPortableDatabaseTuningAsync(runtimeDb);
     if (runtimeDb.Database.IsNpgsql())
     {
         // Npgsql's minimum pool size is a retention floor, not eager creation.
@@ -775,41 +430,50 @@ app.MapGet("/demo/runs/{runId}/instances", async (string runId, IRuntimeDiagnost
 });
 await app.RunAsync();
 
-static async Task EnsureSqlServerMemoryOptimizedDatabaseAsync(string connectionString)
+static async Task ValidateSqlServerPortableDatabaseTuningAsync(RuntimeDbContext runtimeDb)
 {
-    var target = new SqlConnectionStringBuilder(connectionString);
-    var databaseName = target.InitialCatalog;
-    if (string.IsNullOrWhiteSpace(databaseName))
-        throw new InvalidOperationException("The SQL Server runtime database name is required.");
+    var pendingMigrations = (await runtimeDb.Database.GetPendingMigrationsAsync()).ToArray();
+    if (pendingMigrations.Length != 0)
+    {
+        throw new InvalidOperationException(
+            $"The SQL Server runtime database has pending EF migrations: {string.Join(", ", pendingMigrations)}. " +
+            "Generate and apply the host migration script as a DBA, then restart the runtime.");
+    }
 
-    target.InitialCatalog = "master";
-    target.MinPoolSize = 0;
-    target.Pooling = false;
-    await using var connection = new SqlConnection(target.ConnectionString);
-    await connection.OpenAsync(CancellationToken.None);
-    await using var command = connection.CreateCommand();
-    command.CommandText = """
-        DECLARE @databaseName sysname = @name;
-        DECLARE @sql nvarchar(max);
-        DECLARE @memoryFilePath nvarchar(4000) =
-            CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)) + @databaseName + N'_memory';
-        IF DB_ID(@databaseName) IS NULL
-        BEGIN
-            SET @sql = N'CREATE DATABASE ' + QUOTENAME(@databaseName) + N';';
-            EXEC sys.sp_executesql @sql;
-        END;
+    var connection = runtimeDb.Database.GetDbConnection();
+    var closeConnection = connection.State != System.Data.ConnectionState.Open;
+    if (closeConnection)
+        await connection.OpenAsync(CancellationToken.None);
 
-        SET @sql = N'IF NOT EXISTS (SELECT 1 FROM ' + QUOTENAME(@databaseName) +
-            N'.sys.filegroups WHERE [type] = ''FX'') BEGIN ' +
-            N'ALTER DATABASE ' + QUOTENAME(@databaseName) +
-            N' ADD FILEGROUP [RuntimeMemoryOptimized] CONTAINS MEMORY_OPTIMIZED_DATA; ' +
-            N'ALTER DATABASE ' + QUOTENAME(@databaseName) +
-            N' ADD FILE (NAME = ' + QUOTENAME(@databaseName + N'_memory', '''') +
-            N', FILENAME = ' + QUOTENAME(@memoryFilePath, '''') +
-            N') TO FILEGROUP [RuntimeMemoryOptimized]; END;';
-        EXEC sys.sp_executesql @sql;
-        """;
-    command.Parameters.AddWithValue("@name", databaseName);
-    await command.ExecuteNonQueryAsync(CancellationToken.None);
+    try
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                [is_read_committed_snapshot_on],
+                [target_recovery_time_in_seconds],
+                [is_auto_update_stats_async_on]
+            FROM sys.databases
+            WHERE database_id = DB_ID();
+            """;
+        await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
+        if (!await reader.ReadAsync(CancellationToken.None))
+            throw new InvalidOperationException("The SQL Server runtime database could not be inspected.");
+
+        var rcsiEnabled = reader.GetBoolean(0);
+        var targetRecoveryTimeSeconds = reader.GetInt32(1);
+        var asynchronousStatisticsEnabled = reader.GetBoolean(2);
+        if (!rcsiEnabled || targetRecoveryTimeSeconds != 300 || !asynchronousStatisticsEnabled)
+        {
+            throw new InvalidOperationException(
+                "SQL Server portable database tuning is not installed. " +
+                "Apply the packaged EF migration script Scripts/RuntimeStorage.sql as a DBA, then restart the runtime.");
+        }
+    }
+    finally
+    {
+        if (closeConnection)
+            await connection.CloseAsync();
+    }
 }
 

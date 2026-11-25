@@ -605,6 +605,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     dispatch = cachedExecutionState.Dispatch;
                     stage = cachedExecutionState.Stage;
                 }
+                else if (_dispatchRepository is ITaskDispatchIdentifiedCallbackExecutionStateReader identifiedStateReader)
+                {
+                    RuntimeConcurrencyMetrics.CallbackStateCacheMisses.Add(1);
+                    _activationStates.Remove(instanceId);
+                    var callbackState = await identifiedStateReader.GetCallbackExecutionState(
+                        instanceId,
+                        taskExecutionId,
+                        dispatchId,
+                        cancellationToken);
+                    instance = callbackState.ExecutionState.Instance;
+                    task = callbackState.ExecutionState.Task;
+                    attempt = callbackState.ExecutionState.Attempt;
+                    dispatch = callbackState.ExecutionState.Dispatch;
+                    stage = callbackState.ExecutionState.Stage;
+                    executionGraph = callbackState.ExecutionGraph;
+                }
                 else if (_dispatchRepository is ITaskDispatchCallbackExecutionStateReader callbackStateReader)
                 {
                     RuntimeConcurrencyMetrics.CallbackStateCacheMisses.Add(1);
@@ -794,6 +810,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 StageExecution = stage
             };
         }
+
+        private static CompleteCallbackDecision CreateCompleteCallbackDecision(
+            DecisionRequest request,
+            Id instanceId,
+            Id taskExecutionId,
+            Id dispatchId)
+            => new(
+                instanceId,
+                taskExecutionId,
+                dispatchId,
+                request.Payload?.ToJsonString(),
+                request.ExecutionResultMetadata);
 
         private async Task<OrchestrationDecisionState> GetOrLoadStateAsync(
             Id instanceId,

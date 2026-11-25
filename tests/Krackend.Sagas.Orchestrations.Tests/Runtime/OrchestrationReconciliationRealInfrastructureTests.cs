@@ -38,7 +38,8 @@ public sealed class OrchestrationReconciliationRealInfrastructureTests(RuntimeRe
         await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("repro", true)), suffix);
         var waiting = await PollingAssert.EventuallyAsync(
             () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().Where(t => topics.Contains(t.TaskKey)).ToArrayAsync()),
-            tasks => tasks.Length == 2 && tasks.All(task => task.Status == TaskExecutionStatus.WaitingResponse && !string.IsNullOrWhiteSpace(task.TimeoutActionId)),
+            tasks => tasks.Length == 2 && tasks.All(task =>
+                task.Status == TaskExecutionStatus.WaitingResponse && task.ResponseDeadlineUtc.HasValue),
             "Both parallel tasks must be dispatched and have timers.", TimeSpan.FromSeconds(35));
 
         // Isolate the manual reconciliation from background repair and the original timers.
@@ -48,11 +49,17 @@ public sealed class OrchestrationReconciliationRealInfrastructureTests(RuntimeRe
         {
             var scheduler = scope.ServiceProvider.GetRequiredService<ITaskResponseTimeoutScheduler>();
             foreach (var task in waiting)
+            {
+                var attempt = await runtime.QueryAsync(db => db.TaskExecutionAttempts.AsNoTracking()
+                    .SingleAsync(item => item.TaskExecutionId == task.Id && item.AttemptNumber == task.LastAttemptNumber));
                 await scheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
                 {
                     OrchestrationInstanceId = task.OrchestrationInstanceId, TaskExecutionId = task.Id,
-                    ActionId = task.TimeoutActionId, Lane = task.TimeoutActionLane
+                    ActionId = task.TimeoutActionId, Lane = task.TimeoutActionLane,
+                    TaskExecutionAttemptId = attempt.Id, AttemptNumber = attempt.AttemptNumber,
+                    DueOnUtc = task.ResponseDeadlineUtc
                 });
+            }
         }
         await runtime.QueryAsync(async db =>
         {
@@ -228,10 +235,19 @@ public sealed class OrchestrationReconciliationRealInfrastructureTests(RuntimeRe
         await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("test", true)), suffix);
         var task = await PollingAssert.EventuallyAsync(
             () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(x => x.TaskKey == topic)),
-            x => x?.Status == TaskExecutionStatus.WaitingResponse && !string.IsNullOrWhiteSpace(x.TimeoutActionId),
+            x => x?.Status == TaskExecutionStatus.WaitingResponse && x.ResponseDeadlineUtc.HasValue,
             "Task was not dispatched", TimeSpan.FromSeconds(35));
         Assert.NotNull(task);
-        var oldId = global::Mule.Ulid.Parse(task!.TimeoutActionId);
+        var attemptBeforeRepair = await runtime.QueryAsync(db => db.TaskExecutionAttempts.AsNoTracking()
+            .SingleAsync(item => item.TaskExecutionId == task!.Id && item.AttemptNumber == task.LastAttemptNumber));
+        string? oldActionId;
+        await using (var scope = runtime.Services.CreateAsyncScope())
+        {
+            oldActionId = await scope.ServiceProvider.GetRequiredService<IOrchestrationDurableWorkInspector>()
+                .FindTimeoutActionIdAsync(task!, attemptBeforeRepair);
+        }
+        Assert.False(string.IsNullOrWhiteSpace(oldActionId));
+        var oldId = global::Mule.Ulid.Parse(oldActionId!);
         await runtime.QueryAsync(async db =>
         {
             var action = await db.Set<global::Mule.DurableAction>().FirstAsync(x => x.Id == oldId);
@@ -244,11 +260,14 @@ public sealed class OrchestrationReconciliationRealInfrastructureTests(RuntimeRe
         {
             var service = scope.ServiceProvider.GetRequiredService<IOrchestrationReconciliationService>();
             var result = await service.ReconcileAsync(task.OrchestrationInstanceId.ToString());
-            Assert.Equal("Recovered", result.Status);
+            Assert.True(
+                string.Equals("Recovered", result.Status, StringComparison.Ordinal),
+                string.Join(" | ", result.Findings.Select(finding => $"{finding.Status}: {finding.Message}")));
             Assert.Contains(result.Findings, finding => finding.Message.Contains("timeout scheduling", StringComparison.OrdinalIgnoreCase));
         }
         var repaired = await runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().SingleAsync(x => x.Id == task.Id));
-        Assert.NotEqual(task.TimeoutActionId, repaired.TimeoutActionId);
+        Assert.NotEqual(oldActionId, repaired.TimeoutActionId);
+        Assert.False(string.IsNullOrWhiteSpace(repaired.TimeoutActionId));
         await PollingAssert.EventuallyAsync(
             () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().SingleAsync(x => x.Id == task.Id)),
             x => x.Status == TaskExecutionStatus.TimedOut, "Task did not time out after reconciliation", TimeSpan.FromSeconds(45));

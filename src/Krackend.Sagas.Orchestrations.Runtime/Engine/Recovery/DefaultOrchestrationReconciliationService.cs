@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 internal sealed class DefaultOrchestrationReconciliationService(
     IOrchestrationInstanceRepository instances,
@@ -156,7 +157,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
                 {
                     if (attempt is null || attempt.TaskExecutionId != task.Id ||
                         (task.LastAttemptNumber > 0 && task.LastAttemptNumber != attempt.AttemptNumber) ||
-                        attempt.Status != TaskExecutionStatus.WaitingResponse || dispatch?.SentOnUtc is null ||
+                        attempt.Status != TaskExecutionStatus.WaitingResponse || dispatch is null ||
                         dispatch.TaskExecutionAttemptId != attempt.Id ||
                         !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
                     {
@@ -166,8 +167,15 @@ internal sealed class DefaultOrchestrationReconciliationService(
                     if (task.WaitingSinceUtc is null)
                     {
                         // The current attempt and dispatch agree that the command was sent. Restore the lost
-                        // wait marker from that dispatch; never infer a send time for an uncertain delivery.
-                        task.WaitingSinceUtc = dispatch.SentOnUtc.Value;
+                        // wait marker from durable publication state. Prepared direct dispatches intentionally
+                        // omit the second SentOnUtc write, so their persisted attempt owns the same timestamp.
+                        var waitingSinceUtc = dispatch.SentOnUtc ?? attempt.WaitingSinceUtc;
+                        if (waitingSinceUtc is null)
+                        {
+                            findings.Add(new("Intervention", $"Task {task.TaskKey} has no recoverable response-wait timestamp."));
+                            continue;
+                        }
+                        task.WaitingSinceUtc = waitingSinceUtc.Value;
                         await tasks.Update(task, cancellationToken);
                         findings.Add(new("Recovered", $"Restored response-wait tracking for {task.TaskKey}."));
                     }
@@ -187,7 +195,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
                         var timedOut = await timeoutProcessor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
                         if (timedOut.RescheduleOnUtc is { } nextDue && scheduler.UsesDurableScheduling)
                         {
-                            await scheduler.ScheduleAsync(new TaskResponseTimeoutScheduleRequest
+                            await ScheduleTimeoutAfterLeaseAsync(instance.Id, new TaskResponseTimeoutScheduleRequest
                             {
                                 OrchestrationInstanceId = id, TaskExecutionId = task.Id, TaskExecutionAttemptId = attempt.Id,
                                 DispatchId = dispatch.Id, AttemptNumber = attempt.AttemptNumber, DueOnUtc = nextDue
@@ -208,7 +216,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
                                 findings.Add(new("Intervention", $"Terminal timer for {task.TaskKey} has no recoverable action reference."));
                                 continue;
                             }
-                            await scheduler.ScheduleAsync(new TaskResponseTimeoutScheduleRequest
+                            await ScheduleTimeoutAfterLeaseAsync(instance.Id, new TaskResponseTimeoutScheduleRequest
                             {
                                 OrchestrationInstanceId = id, TaskExecutionId = task.Id, TaskExecutionAttemptId = attempt.Id,
                                 DispatchId = dispatch.Id, AttemptNumber = attempt.AttemptNumber, DueOnUtc = due.Value,
@@ -265,7 +273,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
             catch (Exception exception)
             {
                 logger.LogWarning(exception, "Could not reconcile task {TaskId} of instance {InstanceId}", candidate.Id, id);
-                findings.Add(new("Intervention", $"Task {candidate.TaskKey} could not be reconciled; consult runtime logs."));
+                    findings.Add(new("Intervention", $"Task {candidate.TaskKey} could not be reconciled: {exception.Message}"));
             }
         }
 
@@ -275,7 +283,9 @@ internal sealed class DefaultOrchestrationReconciliationService(
             {
                 try
                 {
-                    if (!string.Equals(compensation.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                    var active = string.Equals(compensation.Status, "Pending", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(compensation.Status, "Dispatching", StringComparison.OrdinalIgnoreCase);
+                    if (!active)
                     {
                         if (!string.Equals(compensation.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
                             !string.Equals(compensation.Status, "Skipped", StringComparison.OrdinalIgnoreCase) &&
@@ -283,16 +293,21 @@ internal sealed class DefaultOrchestrationReconciliationService(
                             findings.Add(new("Intervention", $"Compensation {compensation.Id} has an unrecognized or active status '{compensation.Status}'."));
                         continue;
                     }
-                    var presence = await workInspector.InspectCompensationAsync(compensation, cancellationToken);
-                    if (presence != DurableWorkPresence.Present)
-                    {
-                        findings.Add(new("Intervention", $"Compensation {compensation.Id} has durable action state {presence}; delivery is uncertain and was not replayed."));
-                        continue;
-                    }
                     var handled = await compensationRecovery.RecoverCompensationAsync(compensation.Id, cancellationToken);
                     var current = await compensations.TryGetById(compensation.Id, cancellationToken);
                     var completed = handled && string.Equals(current?.Status, "Completed", StringComparison.OrdinalIgnoreCase);
-                    findings.Add(new(completed ? "Recovered" : "Intervention", $"Compensation {compensation.Id}: {(completed ? "delivery recovered" : "delivery remains pending or failed; inspect its history")}.") );
+                    var resolved = handled && current is not null &&
+                        (completed || string.Equals(current.Status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(current.Status, "Skipped", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(current.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+                    var stillActive = current is not null &&
+                        (string.Equals(current.Status, "Pending", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(current.Status, "Dispatching", StringComparison.OrdinalIgnoreCase));
+                    findings.Add(resolved
+                        ? new("Recovered", $"Compensation {compensation.Id}: delivery reached terminal state '{current!.Status}'.")
+                        : stillActive
+                            ? new("Waiting", $"Compensation {compensation.Id}: delivery is claimed or awaiting a safe retry.")
+                            : new("Intervention", $"Compensation {compensation.Id}: delivery could not be recovered; inspect its history."));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception exception)
@@ -310,6 +325,19 @@ internal sealed class DefaultOrchestrationReconciliationService(
             (preparedCancelled || !instanceTasks.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying)) &&
             !findings.Any(x => x.Status == "Intervention"))
         {
+            // An idle aggregate is deliberately ignored by ordinary forward decisions.
+            // Once cancelled parallel work has been validated and prepared for replay,
+            // reconciliation owns the explicit transition back to an active aggregate.
+            if (instance.Status == OrchestrationInstanceStatus.Idle)
+            {
+                instance.Status = OrchestrationInstanceStatus.Running;
+                instance.WaitingSinceUtc = null;
+                instance.IdleSinceUtc = null;
+                instance.IdleExpiresOnUtc = null;
+                instance.LastUpdatedOnUtc = DateTime.UtcNow;
+                await instances.Update(instance, cancellationToken);
+            }
+
             await engine.OrchestrateAsync(new ForwardIntent
             {
                 ArtifactId = instance.RuntimeOrchestrationArtifactId.ToString(),
@@ -339,7 +367,8 @@ internal sealed class DefaultOrchestrationReconciliationService(
         else if (instance.Status == OrchestrationInstanceStatus.Compensating &&
             !findings.Any(x => x.Status == "Intervention") &&
             !(await compensations.GetByInstanceId(id, cancellationToken)).Any(x =>
-                string.Equals(x.Status, "Pending", StringComparison.OrdinalIgnoreCase)))
+                string.Equals(x.Status, "Pending", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x.Status, "Dispatching", StringComparison.OrdinalIgnoreCase)))
         {
             await engine.OrchestrateAsync(new ForwardIntent
             {
@@ -372,4 +401,33 @@ internal sealed class DefaultOrchestrationReconciliationService(
             OccurredOnUtc = DateTime.UtcNow, Message = message, Payload = payload,
             ProducedBy = nameof(DefaultOrchestrationReconciliationService)
         }, cancellationToken);
+
+    private async Task ScheduleTimeoutAfterLeaseAsync(
+        Id instanceId,
+        TaskResponseTimeoutScheduleRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (coordinator is IOrchestrationPostLeaseWork postLeaseWork &&
+            postLeaseWork.IsWithinMutation(instanceId))
+        {
+            await postLeaseWork.ExecuteIsolatedAfterLeaseReleaseAsync(
+                instanceId,
+                async (services, token) =>
+                {
+                    var isolatedScheduler = services.GetRequiredService<ITaskResponseTimeoutScheduler>();
+                    await isolatedScheduler.ScheduleAsync(request, token);
+                },
+                cancellationToken);
+            // A reconciliation response that says "Recovered" must not race the
+            // replacement timer. This continuation makes the coordinator observe the
+            // isolated activation while the actual I/O remains outside the saga lease.
+            await postLeaseWork.ExecuteAfterLeaseReleaseAsync(
+                instanceId,
+                _ => Task.CompletedTask,
+                cancellationToken);
+            return;
+        }
+
+        await scheduler.ScheduleAsync(request, cancellationToken);
+    }
 }

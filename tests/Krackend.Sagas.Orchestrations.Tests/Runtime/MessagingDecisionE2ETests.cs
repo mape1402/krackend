@@ -771,7 +771,12 @@ public sealed class MessagingDecisionE2ETests
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-callback-race");
 
+        await harness.WaitUntilAsync(() => Task.FromResult(harness.Dispatcher.Commands.Count == 1));
         var command = harness.Dispatcher.Commands.Single();
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetTaskAsync(command)).Status == TaskExecutionStatus.WaitingResponse);
+        await harness.WaitUntilAsync(async () =>
+            string.IsNullOrWhiteSpace((await harness.GetInstanceAsync(command)).ActiveLeaseId));
         var taskRepository = harness.Services.GetRequiredService<ITaskExecutionRepository>();
         var attemptRepository = harness.Services.GetRequiredService<ITaskExecutionAttemptRepository>();
         var dispatchRepository = harness.Services.GetRequiredService<ITaskDispatchRepository>();
@@ -805,7 +810,7 @@ public sealed class MessagingDecisionE2ETests
         await attemptRepository.Update(attempt);
         await dispatchRepository.Update(dispatch);
 
-        await harness.ForwardAsync(command, BusinessPayload("retry-response"), Success());
+        await ForwardEventuallyAsync(harness, command, BusinessPayload("retry-response"), Success());
 
         var completedTask = await harness.GetTaskAsync(command);
         var completedAttempt = await harness.GetAttemptAsync(command);
@@ -886,6 +891,20 @@ public sealed class MessagingDecisionE2ETests
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-8");
 
+        try
+        {
+            await harness.WaitUntilAsync(() => Task.FromResult(harness.Dispatcher.Commands.Count == 2));
+        }
+        catch (TimeoutException exception)
+        {
+            var first = harness.Dispatcher.Commands.Single();
+            var task = await harness.GetTaskAsync(first);
+            var currentInstance = await harness.GetInstanceAsync(first);
+            var currentAttempts = await harness.GetAttemptsAsync(first);
+            throw new InvalidOperationException(
+                $"Commands={harness.Dispatcher.Commands.Count}; Task={task.Status}; Instance={currentInstance.Status}; Lease={currentInstance.ActiveLeaseId}; Attempts={string.Join(',', currentAttempts.Select(item => $"{item.AttemptNumber}:{item.Status}:{item.ErrorCode}"))}",
+                exception);
+        }
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
         var retryCommand = harness.Dispatcher.Commands[1];
         Assert.Equal(2, retryCommand.MessageMetadata.Attempt);
@@ -914,6 +933,27 @@ public sealed class MessagingDecisionE2ETests
         }
         catch (OrchestrationInstanceLeaseUnavailableException)
         {
+        }
+    }
+
+    private static async Task ForwardEventuallyAsync(
+        MessagingEngineHarness harness,
+        RemoteCommand command,
+        JsonNode? payload,
+        OrchestrationExecutionResultMetadata? resultMetadata)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            try
+            {
+                await harness.ForwardAsync(command, payload, resultMetadata);
+                return;
+            }
+            catch (OrchestrationInstanceLeaseUnavailableException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
         }
     }
 
@@ -1224,7 +1264,10 @@ public sealed class MessagingDecisionE2ETests
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-11");
 
+        await harness.WaitUntilAsync(() => Task.FromResult(harness.Dispatcher.Commands.Count == 1));
         var command = harness.Dispatcher.Commands.Single();
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetInstanceAsync(command)).Status == OrchestrationInstanceStatus.Completed);
         var instance = await harness.GetInstanceAsync(command);
         var task = await harness.GetTaskAsync(command);
 
@@ -1354,6 +1397,7 @@ public sealed class MessagingDecisionE2ETests
 
         await processor.ProcessDueTimeoutsAsync(task.WaitingSinceUtc!.Value.AddSeconds(2));
 
+        await harness.WaitUntilAsync(() => Task.FromResult(harness.Dispatcher.Commands.Count == 2));
         Assert.Equal(["Begin", "Defer", "Save", "Commit"], unitOfWork.Operations.Take(4));
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
     }
@@ -2158,8 +2202,11 @@ public sealed class MessagingDecisionE2ETests
                 MessagingTask("task.other1", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
                 MessagingTask("task.other2", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId))));
         await harness.StartAsync(BusinessPayload("trigger"), "parallel-recovery");
+        await harness.WaitUntilAsync(() => Task.FromResult(harness.Dispatcher.Commands.Count == 3));
         var failed = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail");
         var others = harness.Dispatcher.Commands.Where(x => x.TaskKey != "task.fail").ToArray();
+        await harness.WaitUntilAsync(async () =>
+            (await harness.GetTasksAsync(failed)).All(task => task.Status == TaskExecutionStatus.WaitingResponse));
         await harness.ForwardAsync(failed, null, Failure("PermanentFailure", "failed"));
         var instance = await harness.GetInstanceAsync(failed);
         instance.Status = idle ? OrchestrationInstanceStatus.Idle : reconcile ? OrchestrationInstanceStatus.Running : alreadyCompleted ? OrchestrationInstanceStatus.Completed : OrchestrationInstanceStatus.DeadLettered;

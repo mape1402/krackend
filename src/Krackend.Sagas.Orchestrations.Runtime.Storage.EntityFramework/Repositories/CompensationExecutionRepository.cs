@@ -45,6 +45,6 @@ internal sealed class CompensationExecutionRepository : RuntimeRepositoryBase, I
 
     public async Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
         => await DbContext.CompensationExecutions.AsNoTracking()
-            .Where(x => x.Status == "Pending")
+            .Where(x => x.Status == "Pending" || x.Status == "Dispatching")
             .ToArrayAsync(cancellationToken);
 }

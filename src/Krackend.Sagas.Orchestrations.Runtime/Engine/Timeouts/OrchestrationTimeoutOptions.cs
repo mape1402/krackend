@@ -33,6 +33,12 @@ public sealed class OrchestrationTimeoutOptions
     /// </summary>
     public int RecoveryQuietPeriodMilliseconds { get; set; } = 250;
 
+    /// <summary>
+    /// Gets or sets the longest time bulk timeout recovery yields continuously to
+    /// realtime ingress before one bounded repair pass is allowed.
+    /// </summary>
+    public int RecoveryMaxDeferralSeconds { get; set; } = 30;
+
     /// <summary>Default maximum lifetime in seconds. Zero disables the default.</summary>
     public int DefaultInstanceLifetimeSeconds { get; set; } = 86400;
 

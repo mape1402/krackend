@@ -33,6 +33,9 @@ public sealed class RuntimeSqlServerStorageModelCustomizer
             .StartsAt(1)
             .IncrementsBy(1);
         ConfigureRuntimeWriteStorage(modelBuilder);
+        ConfigurePortableRuntimeIndexes(modelBuilder);
+        if (!_memoryOptimizedExecutionState)
+            ConfigureRowStoreTaskExecutionStorage(modelBuilder);
         if (_memoryOptimizedExecutionState)
             ConfigureMemoryOptimizedExecutionState(modelBuilder);
         ConfigureSqlServerRuntimeDesignNodeIndexes(modelBuilder);
@@ -79,11 +82,97 @@ public sealed class RuntimeSqlServerStorageModelCustomizer
         entity.Property<long>("StorageSequence")
             .HasDefaultValueSql("NEXT VALUE FOR [Runtime].[RuntimeStorageSequence]")
             .ValueGeneratedOnAdd();
-        entity.HasKey("Id").IsClustered(false);
+        entity.HasKey("Id").IsClustered(false).HasFillFactor(95);
         entity.HasIndex("StorageSequence")
             .HasDatabaseName($"CIX_{tableName}_StorageSequence")
             .IsUnique()
-            .IsClustered();
+            .IsClustered()
+            .HasFillFactor(95)
+            .UseDataCompression(DataCompressionType.Row);
+
+        foreach (var index in entity.Metadata.GetIndexes())
+        {
+            index.SetFillFactor(95);
+            index.SetDataCompression(DataCompressionType.Row);
+        }
+    }
+
+    private static void ConfigurePortableRuntimeIndexes(ModelBuilder modelBuilder)
+    {
+        var instances = modelBuilder.Entity<OrchestrationInstance>();
+
+        // Extend the portable catalog index and add a separately named filtered
+        // index over the same key columns for the much smaller running set.
+        instances.HasIndex(x => new { x.StartedOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_StartedOnUtc_Id")
+            .IsDescending(true, true)
+            .IncludeProperties(nameof(OrchestrationInstance.CorrelationId));
+
+        instances.HasIndex(
+                new[] { nameof(OrchestrationInstance.StartedOnUtc), nameof(OrchestrationInstance.Id) },
+                "SqlServerRunningStartedOnUtcId")
+            .HasDatabaseName("IX_OrchestrationInstances_Running_StartedOnUtc_Id")
+            .HasFilter("[Status] = 'Running'")
+            .IsDescending(true, true)
+            .IncludeProperties(nameof(OrchestrationInstance.CorrelationId));
+        instances.HasIndex(x => new { x.ExpiresOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_Running_ExpiresOnUtc_Id")
+            .HasFilter("[Status] = 'Running' AND [ExpiresOnUtc] IS NOT NULL")
+            .IncludeProperties(x => x.CorrelationId);
+        instances.HasIndex(x => new { x.IdleExpiresOnUtc, x.Id })
+            .HasDatabaseName("IX_OrchestrationInstances_Idle_IdleExpiresOnUtc_Id")
+            .HasFilter("[Status] = 'Idle' AND [IdleExpiresOnUtc] IS NOT NULL")
+            .IncludeProperties(x => x.CorrelationId);
+        instances.HasIndex(
+                new[] { nameof(OrchestrationInstance.Id) },
+                "SqlServerDispatchCancellationPendingId")
+            .HasDatabaseName("IX_OrchestrationInstances_DispatchCancellationPending_Id")
+            .HasFilter("[DispatchCancellationPending] = 1");
+
+        var tasks = modelBuilder.Entity<TaskExecution>();
+        tasks.HasIndex(x => new { x.ResponseDeadlineUtc, x.Id })
+            .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NOT NULL")
+            .IncludeProperties(x => x.CorrelationId);
+        tasks.HasIndex(x => new { x.WaitingSinceUtc, x.Id })
+            .HasFilter("[Status] = 'WaitingResponse' AND [ResponseDeadlineUtc] IS NULL")
+            .IncludeProperties(x => x.CorrelationId);
+
+        var dispatches = modelBuilder.Entity<TaskDispatch>();
+        dispatches.HasIndex(x => new { x.ScheduledOnUtc, x.Id })
+            .HasFilter("[DispatchStatus] = 'QueuePending'");
+        dispatches.HasIndex(x => x.PhysicalCancellationPending)
+            .HasFilter("[PhysicalCancellationPending] = 1");
+        dispatches.HasIndex(x => new { x.CallbackPending, x.CallbackAcceptedOnUtc })
+            .HasFilter("[CallbackPending] = 1");
+
+        const string statisticsObservationName =
+            "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.SagaStatisticsObservation";
+        var statisticsObservation = modelBuilder.Model.FindEntityType(statisticsObservationName)
+            ?? throw new InvalidOperationException($"Runtime entity '{statisticsObservationName}' is not mapped.");
+        modelBuilder.Entity(statisticsObservation.ClrType)
+            .HasIndex(new[] { "InstanceId", "Revision" }, "SqlServerPendingStatisticsObservation")
+            .HasDatabaseName("IX_SagaStatisticsObservations_Pending_InstanceId_Revision")
+            .HasFilter("[Processed] = 0");
+    }
+
+    private static void ConfigureRowStoreTaskExecutionStorage(ModelBuilder modelBuilder)
+    {
+        var tasks = modelBuilder.Entity<TaskExecution>();
+        tasks.Property<byte>("StorageBucket")
+            .HasComputedColumnSql(
+                "CONVERT(tinyint, CONVERT(int, SUBSTRING([OrchestrationInstanceId], 16, 1)) & 63)",
+                stored: true);
+        tasks.HasKey(x => x.Id)
+            .IsClustered(false)
+            .HasFillFactor(95);
+        tasks.HasIndex(
+                new[] { "StorageBucket", nameof(TaskExecution.OrchestrationInstanceId), nameof(TaskExecution.Id) },
+                "PortableTaskExecutionStorage")
+            .HasDatabaseName("CIX_TaskExecutions_StorageBucket_OrchestrationInstanceId_Id")
+            .IsUnique()
+            .IsClustered()
+            .HasFillFactor(95)
+            .UseDataCompression(DataCompressionType.Row);
     }
 
     private static void ConfigureSqlServerIdColumns(ModelBuilder modelBuilder)

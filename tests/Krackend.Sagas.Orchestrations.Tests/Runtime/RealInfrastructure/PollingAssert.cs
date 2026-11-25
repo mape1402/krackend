@@ -1,5 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 
+using System.Text.Json;
+
 internal static class PollingAssert
 {
     public static async Task<T> EventuallyAsync<T>(
@@ -27,6 +29,23 @@ internal static class PollingAssert
             await Task.Delay(delay);
         }
 
-        throw new TimeoutException($"{failureMessage}. Last observed value: {lastValue}");
+        throw new TimeoutException($"{failureMessage}. Last observed value: {Format(lastValue)}");
+    }
+
+    private static string Format<T>(T value)
+    {
+        if (value is null)
+        {
+            return "<null>";
+        }
+
+        try
+        {
+            return JsonSerializer.Serialize(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (Exception)
+        {
+            return value.ToString() ?? value.GetType().FullName ?? "<unknown>";
+        }
     }
 }

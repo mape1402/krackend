@@ -19,6 +19,22 @@ public interface IRuntimeHotStateStore
         IReadOnlyCollection<RuntimeHotStateMutation> mutations,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Atomically commits one engine activation and releases its distributed
+    /// mutation lease. Providers may override this to avoid a second storage round
+    /// trip while retaining the same fencing boundary.
+    /// </summary>
+    async Task<long> CommitAndReleaseAsync(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        Id instanceId,
+        string leaseId,
+        CancellationToken cancellationToken = default)
+    {
+        var sequence = await CommitAsync(mutations, cancellationToken);
+        await ReleaseLeaseAsync(instanceId, leaseId, cancellationToken);
+        return sequence;
+    }
+
     /// <summary>Caches a durable entity without adding projection work.</summary>
     Task CacheAsync(RuntimeHotStateMutation mutation, CancellationToken cancellationToken = default);
 
@@ -85,6 +101,95 @@ public interface IRuntimeHotStateStore
         => Task.FromResult(0);
 }
 
+/// <summary>
+/// Reads the complete hot execution graph owned by one instance in one provider operation.
+/// Providers that support this capability avoid rebuilding a callback from several independent
+/// entity and owner-index reads.
+/// </summary>
+public interface IRuntimeHotStateInstanceGraphStore
+{
+    /// <summary>Reads one consistent materialized execution graph.</summary>
+    Task<IReadOnlyCollection<RuntimeHotStateRecord>> ReadInstanceGraphAsync(
+        Id instanceId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Atomically acquires an instance mutation lease and returns the exact graph version
+/// protected by that lease. Implementations may reuse a process-local graph only after
+/// the durable hot store confirms that its version is still current.
+/// </summary>
+public interface IRuntimeHotStateLeaseGraphStore
+{
+    /// <summary>
+    /// Returns the fenced graph snapshot, or <see langword="null"/> when another owner
+    /// currently holds the instance lease.
+    /// </summary>
+    Task<RuntimeHotStateLeaseGraph?> TryAcquireLeaseWithGraphAsync(
+        Id instanceId,
+        string leaseId,
+        TimeSpan duration,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Provides optimistic graph fencing for hot stores whose atomic commit can reject
+/// a stale graph version. This removes lease round trips from the uncontended path
+/// without allowing concurrent replicas to overwrite each other.
+/// </summary>
+public interface IRuntimeHotStateOptimisticGraphStore
+{
+    /// <summary>Reads a stable graph and the version that must fence its next commit.</summary>
+    Task<RuntimeHotStateLeaseGraph> ReadGraphFenceAsync(
+        Id instanceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Commits only when the protected graph still has <paramref name="expectedVersion"/>.</summary>
+    Task<long> CommitFencedAsync(
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        Id instanceId,
+        long expectedVersion,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Stores one complete orchestration tracking aggregate under its instance id.
+/// Initial aggregates are cached only after their durable creation commits.
+/// </summary>
+public interface IRuntimeHotStateAggregateStore
+{
+    /// <summary>Caches a durably committed orchestration aggregate without scheduling projection.</summary>
+    Task CacheAggregateAsync(
+        Id instanceId,
+        IReadOnlyCollection<RuntimeHotStateMutation> mutations,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>One lease-protected instance graph snapshot.</summary>
+public sealed record RuntimeHotStateLeaseGraph(
+    long Version,
+    IReadOnlyCollection<RuntimeHotStateRecord> Records,
+    bool IsOptimisticFence = false);
+
+/// <summary>
+/// Stores the transport publication receipt separately from the execution graph. A callback or
+/// recovery pass can fold it into the next functional state commit without forcing an otherwise
+/// redundant full task mutation on the dispatch hot path.
+/// </summary>
+public interface IRuntimeHotStateDispatchReceiptStore
+{
+    /// <summary>Records the first confirmed physical publication.</summary>
+    Task RecordDispatchPublicationAsync(
+        Id dispatchId,
+        DateTime publishedOnUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads a previously recorded physical publication.</summary>
+    Task<DateTime?> TryReadDispatchPublicationAsync(
+        Id dispatchId,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>One database-independent entity mutation captured from an engine activation.</summary>
 public sealed record RuntimeHotStateMutation(
     string EntityType,
@@ -106,7 +211,8 @@ public sealed record RuntimeHotStateRecord(
 /// <summary>A durable projection journal entry containing one atomic activation.</summary>
 public sealed record RuntimeHotProjectionBatch(
     long Sequence,
-    IReadOnlyCollection<RuntimeHotStateMutation> Mutations);
+    IReadOnlyCollection<RuntimeHotStateMutation> Mutations,
+    string? InstanceId = null);
 
 /// <summary>A fenced reservation of ordered projection batches.</summary>
 public sealed record RuntimeHotProjectionLease(

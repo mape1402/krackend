@@ -65,17 +65,38 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
         var artifact = await _artifactRepository.GetById(artifactId, cancellationToken);
         if (artifact.IngressGeneration != request.IngressGeneration)
         {
-            await MarkRollbackFailedAsync(request, cancellationToken);
-            if ((request.RollbackTargetTriggerKeys?.Length ?? 0) > 0 &&
+            if (artifact.IngressGeneration < request.IngressGeneration)
+            {
+                // The Redis fast lane can expose the durable intent a few
+                // milliseconds before the deployment transaction commits.
+                // Treat the older database generation as transient so Mule
+                // retries after the artifact and its rollback audit are visible.
+                throw new InvalidOperationException(
+                    $"Artifact generation {request.IngressGeneration} is not visible yet; current generation is {artifact.IngressGeneration}.");
+            }
+            var committedRollback = (request.RollbackTargetTriggerKeys?.Length ?? 0) > 0 &&
                 !string.IsNullOrWhiteSpace(request.RollbackOperationId) && artifact.IsActive &&
-                artifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
+                artifact.Status == RuntimeOrchestrationArtifactStatus.Ready &&
+                artifact.IngressGeneration == checked(request.IngressGeneration + 1);
+            if (committedRollback)
             {
                 // A rollback can commit before its notification is sent. Re-reading
                 // the current generation makes a durable retry refresh active ingress.
                 var refresh = RuntimeArtifactReadyGossipMessage.FromArtifact(artifact);
                 refresh.RefreshToken = request.RollbackOperationId;
+                await NotifyReplacementSourcesAsync(request, request.RollbackOperationId, cancellationToken);
                 await _artifactReadyNotifier.NotifyReadyAsync(refresh, cancellationToken);
-                await NotifyRollbackSourcesAsync(request, cancellationToken);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Stale rollback projection {OperationId} could not be recovered. Requested generation {RequestedGeneration}; current generation {CurrentGeneration}; status {Status}; active {IsActive}.",
+                    request.RollbackOperationId,
+                    request.IngressGeneration,
+                    artifact.IngressGeneration,
+                    artifact.Status,
+                    artifact.IsActive);
+                await MarkRollbackFailedAsync(request, cancellationToken);
             }
             _logger.LogInformation(
                 "Skipping stale ingress projection for artifact {ArtifactId}. Requested generation {RequestedGeneration}, current generation {CurrentGeneration}.",
@@ -108,11 +129,20 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
                 artifact = await _artifactRepository.GetById(artifactId, cancellationToken);
             }
             var readyMessage = RuntimeArtifactReadyGossipMessage.FromArtifact(artifact);
-            if (rollback) readyMessage.RefreshToken = request.RollbackOperationId;
+            if (staged)
+            {
+                var refreshToken = rollback
+                    ? request.RollbackOperationId
+                    : $"rollout:{request.ArtifactId}:{request.IngressGeneration}";
+                // Remove the previous logical owner first. Until the target is
+                // refreshed, the staged route deliberately causes redelivery
+                // instead of dispatching a message to the wrong artifact.
+                await NotifyReplacementSourcesAsync(request, refreshToken, cancellationToken);
+                readyMessage.RefreshToken = refreshToken;
+            }
             await _artifactReadyNotifier.NotifyReadyAsync(readyMessage, cancellationToken);
-            if (rollback) await NotifyRollbackSourcesAsync(request, cancellationToken);
         }
-        catch (IngressProjectionConfigurationException exception)
+        catch (Exception exception) when (exception is IngressProjectionConfigurationException or IngressStandupConfigurationException)
         {
             _logger.LogWarning(
                 exception,
@@ -125,14 +155,17 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
         }
     }
 
-    private async Task NotifyRollbackSourcesAsync(RuntimeArtifactProjectionRequest request, CancellationToken cancellationToken)
+    private async Task NotifyReplacementSourcesAsync(
+        RuntimeArtifactProjectionRequest request,
+        string refreshToken,
+        CancellationToken cancellationToken)
     {
         foreach (var sourceId in (request.RolloutReplacements ?? []).Select(x => x.ArtifactId).Distinct(StringComparer.Ordinal))
         {
             var source = await _artifactRepository.GetById(new Id(System.Ulid.Parse(sourceId)), cancellationToken);
             if (!source.IsActive || source.Status != RuntimeOrchestrationArtifactStatus.Ready) continue;
             var refresh = RuntimeArtifactReadyGossipMessage.FromArtifact(source);
-            refresh.RefreshToken = request.RollbackOperationId;
+            refresh.RefreshToken = refreshToken;
             await _artifactReadyNotifier.NotifyReadyAsync(refresh, cancellationToken);
         }
     }
@@ -216,15 +249,19 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
                 _logger.LogWarning(cleanupException, "Could not clean up failed staged ingress for {ArtifactId}.", artifactId);
             }
             if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested) throw;
-            await MarkRollbackFailedAsync(request, cancellationToken);
-            try
+            var permanent = exception is IngressProjectionConfigurationException or IngressStandupConfigurationException;
+            if (permanent)
             {
-                if (_artifactRepository is IRuntimeArtifactRolloutTransitionRepository transitions)
-                    await transitions.TryMarkRolloutStandupFailed(artifactId, request.IngressGeneration, exception.Message, cancellationToken);
-            }
-            catch (Exception markException)
-            {
-                _logger.LogWarning(markException, "Could not record staged rollout standup failure for {ArtifactId}.", artifactId);
+                await MarkRollbackFailedAsync(request, cancellationToken);
+                try
+                {
+                    if (_artifactRepository is IRuntimeArtifactRolloutTransitionRepository transitions)
+                        await transitions.TryMarkRolloutStandupFailed(artifactId, request.IngressGeneration, exception.Message, cancellationToken);
+                }
+                catch (Exception markException)
+                {
+                    _logger.LogWarning(markException, "Could not record staged rollout standup failure for {ArtifactId}.", artifactId);
+                }
             }
             throw;
         }
