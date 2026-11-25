@@ -234,6 +234,34 @@ public sealed class ProjectIngressConfigurationsActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenAnotherReplicaCompletesProjection_DoesNotOverwriteReadyState()
+    {
+        var artifactId = Id.New();
+        const long IngressGeneration = 7;
+        var pending = CreateArtifact(artifactId, IngressGeneration);
+        var ready = CreateArtifact(artifactId, IngressGeneration);
+        ready.Status = RuntimeOrchestrationArtifactStatus.Ready;
+        ready.ProjectionCompletedOnUtc = DateTime.UtcNow;
+        var repository = CreateRepository(pending);
+        repository.GetById(artifactId, Arg.Any<CancellationToken>()).Returns(pending, ready);
+        var projector = Substitute.For<IRuntimeIngressConfigurationProjector>();
+        projector.ProjectAsync(pending, Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Concurrent projection changed the durable row."));
+        var notifier = Substitute.For<IRuntimeArtifactReadyNotifier>();
+        var action = CreateAction(repository, projector, notifier);
+
+        await action.ExecuteAsync(CreateContext(artifactId, IngressGeneration), CancellationToken.None);
+
+        await repository.DidNotReceiveWithAnyArgs()
+            .MarkProjectionFailed(default, default, default!, default);
+        await notifier.Received(1).NotifyReadyAsync(
+            Arg.Is<RuntimeArtifactReadyGossipMessage>(message =>
+                message.ArtifactId == artifactId.ToString() &&
+                message.IngressGeneration == IngressGeneration),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenProjectionFailsAndFailureMarkingFails_PreservesOriginalProjectionException()
     {
         var artifactId = Id.New();
