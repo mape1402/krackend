@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
@@ -38,11 +39,18 @@ public sealed class ControlPlaneDbContext : DbContext
     public ControlPlaneDbContext(
         DbContextOptions<ControlPlaneDbContext> options,
         IOptions<ControlPlaneEntityFrameworkStorageOptions> storageOptions)
-        : base(options)
+        : base(ConfigureWarnings(options))
     {
         ArgumentNullException.ThrowIfNull(storageOptions);
         this.storageOptions = storageOptions.Value;
     }
+
+    private static DbContextOptions<ControlPlaneDbContext> ConfigureWarnings(
+        DbContextOptions<ControlPlaneDbContext> options)
+        => new DbContextOptionsBuilder<ControlPlaneDbContext>(options)
+            .ConfigureWarnings(warnings =>
+                warnings.Log(CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
     /// <summary>
     /// Gets orchestration definitions.

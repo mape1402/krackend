@@ -419,7 +419,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
-    public async Task UnsupportedEfProviderDoesNotPretendToAcquireAnAtomicLease()
+    public async Task NonRelationalEfProviderUsesTrackedAtomicLeaseFallback()
     {
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
@@ -427,8 +427,15 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
         await instances.Create(instance);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            instances.TryAcquireLease(instance.Id, "owner", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)));
+        var lease = await instances.TryAcquireLease(
+            instance.Id,
+            "owner",
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddMinutes(1));
+
+        Assert.NotNull(lease);
+        Assert.Equal("owner", (await instances.GetById(instance.Id)).ActiveLeaseId);
+        await instances.ReleaseLease(instance.Id, "owner");
         Assert.Null((await instances.GetById(instance.Id)).ActiveLeaseId);
     }
 
@@ -872,7 +879,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             CorrelationId = old.Id.ToString(), DeduplicationKey = old.Id.ToString(), Status = DurableActionStatus.Pending
         }, services, request);
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, default));
-        Assert.Equal(RuntimeOrchestrationArtifactStatus.Failed, (await db.RuntimeArtifactDeploymentHistory.AsNoTracking().SingleAsync()).RuntimeStatus);
+        Assert.Equal(RuntimeOrchestrationArtifactStatus.Pending, (await db.RuntimeArtifactDeploymentHistory.AsNoTracking().SingleAsync()).RuntimeStatus);
         Assert.False((await db.RuntimeIngressConfigurations.AsNoTracking().SingleAsync(x => x.ConfigurationKey == oldKey)).IsActive);
         Assert.True((await db.RuntimeIngressConfigurations.AsNoTracking().SingleAsync(x => x.ConfigurationKey == currentKey)).IsActive);
         Assert.True((await db.RuntimeIngressConfigurations.AsNoTracking().SingleAsync(x => x.ConfigurationKey == exclusiveKey)).IsActive);
@@ -895,9 +902,9 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         // A durable retry after commit must republish the refresh without changing the successful outcome.
         await action.ExecuteAsync(context, default);
         Assert.Equal(RuntimeOrchestrationArtifactStatus.Ready, (await db.RuntimeArtifactDeploymentHistory.AsNoTracking().SingleAsync()).RuntimeStatus);
-        await notifier.Received(2).NotifyReadyAsync(Arg.Is<RuntimeArtifactReadyGossipMessage>(x =>
-            x.IngressGeneration == request.IngressGeneration + 1 && x.RefreshToken == request.RollbackOperationId), Arg.Any<CancellationToken>());
         await notifier.Received(1).NotifyReadyAsync(Arg.Is<RuntimeArtifactReadyGossipMessage>(x =>
+            x.IngressGeneration == request.IngressGeneration + 1 && x.RefreshToken == request.RollbackOperationId), Arg.Any<CancellationToken>());
+        await notifier.Received(2).NotifyReadyAsync(Arg.Is<RuntimeArtifactReadyGossipMessage>(x =>
             x.ArtifactId == current.Id.ToString() && x.RefreshToken == request.RollbackOperationId), Arg.Any<CancellationToken>());
 
         const string staleOperation = "runtime-rollback:stale";
@@ -1095,7 +1102,12 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         await action.ExecuteAsync(context, default);
         Assert.False((await db.RuntimeIngressConfigurations.AsNoTracking().SingleAsync()).IsActive);
         Assert.Equal(RuntimeOrchestrationArtifactStatus.Ready, (await artifacts.GetById(next.Id)).Status);
-        await notifier.Received(1).NotifyReadyAsync(Arg.Any<RuntimeArtifactReadyGossipMessage>(), Arg.Any<CancellationToken>());
+        await notifier.Received(1).NotifyReadyAsync(
+            Arg.Is<RuntimeArtifactReadyGossipMessage>(message => message.ArtifactId == old.Id.ToString()),
+            Arg.Any<CancellationToken>());
+        await notifier.Received(1).NotifyReadyAsync(
+            Arg.Is<RuntimeArtifactReadyGossipMessage>(message => message.ArtifactId == next.Id.ToString()),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
