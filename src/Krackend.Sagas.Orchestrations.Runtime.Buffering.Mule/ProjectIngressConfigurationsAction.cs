@@ -206,6 +206,30 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
         }
         catch (Exception exception)
         {
+            try
+            {
+                var current = await _artifactRepository.GetById(artifactId, CancellationToken.None);
+                if (current.IngressGeneration == request.IngressGeneration &&
+                    current.Status == RuntimeOrchestrationArtifactStatus.Ready &&
+                    current.ProjectionCompletedOnUtc is not null)
+                {
+                    _logger.LogInformation(
+                        exception,
+                        "Concurrent ingress projection for artifact {ArtifactId} generation {IngressGeneration} completed on another runtime replica.",
+                        artifactId,
+                        request.IngressGeneration);
+                    return current;
+                }
+            }
+            catch (Exception stateException)
+            {
+                _logger.LogWarning(
+                    stateException,
+                    "Could not verify the durable projection state for artifact {ArtifactId} generation {IngressGeneration} after a local projection failure.",
+                    artifactId,
+                    request.IngressGeneration);
+            }
+
             await MarkProjectionFailedAsync(artifactId, request.IngressGeneration, exception,
                 (request.RolloutReplacements?.Length ?? 0) > 0, cancellationToken);
             throw;
